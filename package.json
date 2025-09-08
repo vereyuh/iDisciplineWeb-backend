@@ -1,0 +1,20 @@
+{
+  "name": "idiscipline-backend",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.0",
+    "@sendgrid/mail": "^8.1.5",
+    "@supabase/supabase-js": "^2.49.4",
+    "@anthropic-ai/sdk": "^0.30.1",
+    "pdf-parse": "^1.1.1",
+    "multer": "^2.0.1",
+    "xlsx": "^0.18.5",
+    "socket.io": "^4.8.1"
+  }
+}
