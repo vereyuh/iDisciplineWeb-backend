@@ -66,6 +66,25 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Trust proxy to correctly read x-forwarded-* headers on platforms like Vercel
+app.set('trust proxy', 1);
+
+// Helper to compute the absolute base URL for links
+function getBaseUrl(req) {
+  if (process.env.BACKEND_URL && process.env.BACKEND_URL.trim() !== '') {
+    return process.env.BACKEND_URL.replace(/\/+$/, '');
+  }
+  if (process.env.VERCEL_URL && process.env.VERCEL_URL.trim() !== '') {
+    const raw = process.env.VERCEL_URL;
+    const withProtocol = raw.startsWith('http') ? raw : `https://${raw}`;
+    return withProtocol.replace(/\/+$/, '');
+  }
+  const forwardedProto = (req.headers['x-forwarded-proto'] || '').toString().split(',')[0];
+  const protocol = forwardedProto || req.protocol || 'http';
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  return `${protocol}://${host}`;
+}
+
 const upload = multer({ dest: 'uploads/' });
 
 // 1. Send Verification Email Route - UPDATED
@@ -82,7 +101,8 @@ app.post('/send-verification-email', async (req, res) => {
   try {
     console.log(`📧 Sending verification email to ${email} with token: ${token}`);
     
-    const verificationLink = `${process.env.BACKEND_URL || 'http://localhost:5000'}/verify-email?token=${token}`;
+    const baseUrl = getBaseUrl(req);
+    const verificationLink = `${baseUrl}/verify-email?token=${token}`;
     
     const msg = {
       to: email,
@@ -595,7 +615,8 @@ app.post('/resend-verification-link', async (req, res) => {
     }
 
     // Send new verification email
-    const verificationLink = `${process.env.BACKEND_URL || 'http://localhost:5000'}/verify-email?token=${newToken}`;
+    const baseUrl = getBaseUrl(req);
+    const verificationLink = `${baseUrl}/verify-email?token=${newToken}`;
     
     const msg = {
       to: email,
@@ -1144,7 +1165,8 @@ app.post('/send-admin-verification-email', async (req, res) => {
   try {
     console.log(`📧 Sending admin verification email to ${email} with token: ${token}`);
     
-    const verificationLink = `${process.env.BACKEND_URL || 'http://localhost:5000'}/verify-admin-email?token=${token}`;
+    const baseUrl = getBaseUrl(req);
+    const verificationLink = `${baseUrl}/verify-admin-email?token=${token}`;
     
     const msg = {
       to: email,
