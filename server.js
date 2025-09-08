@@ -5,7 +5,7 @@ const sgMail = require('@sendgrid/mail');
 const { createClient } = require('@supabase/supabase-js');
 const crypto = require('crypto');
 // For Chatbot
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+
 const pdfParse = require('pdf-parse');
 const fs = require('fs');
 //For websocket
