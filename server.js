@@ -29,6 +29,53 @@ const supabase = createClient(
 // Set your SendGrid API key
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
+// Semaphore SMS setup
+const SEMAPHORE_API_KEY = process.env.SEMAPHORE_API_KEY;
+const SEMAPHORE_SENDER_NAME = process.env.SEMAPHORE_SENDER_NAME || 'iDiscipline';
+
+// Function to send SMS via Semaphore
+async function sendSMS(phoneNumber, message) {
+  try {
+    console.log('📱 Attempting to send SMS to:', phoneNumber);
+    console.log('📝 Message length:', message.length);
+    
+    // Semaphore API expects parameters as query parameters, not in body
+    const params = new URLSearchParams({
+      apikey: SEMAPHORE_API_KEY,
+      number: phoneNumber,
+      message: message,
+      sendername: SEMAPHORE_SENDER_NAME
+    });
+    
+    const response = await fetch(`https://api.semaphore.co/api/v4/messages?${params}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      }
+    });
+
+    const result = await response.json();
+    console.log('📊 Semaphore API Response:', result);
+    
+    // Check if the response contains an error message
+    if (result && result.number && result.number.includes('The number format is invalid')) {
+      console.error('❌ Invalid phone number format:', phoneNumber);
+      return { success: false, error: 'Invalid phone number format. Please check the contact number.' };
+    }
+    
+    if (response.ok && result && !result.number) {
+      console.log('✅ SMS sent successfully:', result);
+      return { success: true, data: result };
+    } else {
+      console.error('❌ SMS sending failed:', result);
+      return { success: false, error: result.message || 'Failed to send SMS' };
+    }
+  } catch (error) {
+    console.error('💥 Error sending SMS:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 // Anthropic setup
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -1264,6 +1311,50 @@ app.post('/send-parent-email', async (req, res) => {
   } catch (error) {
     console.error('💥 Error sending parent notification email:', error);
     res.status(500).json({ success: false, message: 'Failed to send parent notification email.', error: error.message });
+  }
+});
+
+// 7. Send SMS to parent
+app.post('/send-parent-sms', async (req, res) => {
+  const { parentPhone, parentName, studentName, violationCategory, violationType, timeReported, notes, status } = req.body;
+
+  if (!parentPhone || !parentName || !studentName) {
+    return res.status(400).json({ success: false, message: 'Missing required fields.' });
+  }
+
+  // Format phone number for Semaphore API
+  console.log('📞 Original phone number:', parentPhone);
+  let formattedPhone = parentPhone.replace(/\D/g, ''); // Remove all non-digits
+  console.log('📞 After removing non-digits:', formattedPhone);
+  
+  // Semaphore API expects format like 09123456789 (without +63)
+  if (formattedPhone.startsWith('63')) {
+    // If it starts with 63, remove it and add 0
+    formattedPhone = '0' + formattedPhone.substring(2);
+  } else if (formattedPhone.startsWith('+63')) {
+    // If it starts with +63, remove +63 and add 0
+    formattedPhone = '0' + formattedPhone.substring(3);
+  } else if (!formattedPhone.startsWith('0')) {
+    // If it doesn't start with 0, add 0
+    formattedPhone = '0' + formattedPhone;
+  }
+  
+  console.log('📞 Final formatted phone for Semaphore:', formattedPhone);
+
+  // Create SMS message
+  const message = `Dear ${parentName},\n\nThis is to inform you that your child, ${studentName}, has been reported for a disciplinary incident at school.\n\nStatus: ${status || 'N/A'}\nViolation Category: ${violationCategory || 'N/A'}\nViolation Type: ${violationType || 'N/A'}\nTime Reported: ${timeReported || 'N/A'}\nNotes: ${notes || 'N/A'}\n\nIf you have any questions or concerns, please contact the school office.\n\nThis is an automated message from iDiscipline.`;
+
+  try {
+    const result = await sendSMS(formattedPhone, message);
+    
+    if (result.success) {
+      res.status(200).json({ success: true, message: 'Parent notification SMS sent successfully.' });
+    } else {
+      res.status(500).json({ success: false, message: 'Failed to send parent notification SMS.', error: result.error });
+    }
+  } catch (error) {
+    console.error('💥 Error sending parent notification SMS:', error);
+    res.status(500).json({ success: false, message: 'Failed to send parent notification SMS.', error: error.message });
   }
 });
 
