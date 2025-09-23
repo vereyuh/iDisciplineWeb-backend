@@ -1527,7 +1527,46 @@ app.post('/api/report-suggestion', async (req, res) => {
 
     // Compose prompt with truncated handbook text to reduce token usage
     const truncatedHandbook = handbookText.substring(0, 8000); // Limit to ~8000 characters
-    const prompt = `You are a helpful school assistant. Based on the following student handbook excerpt and the provided report summary, give a concise (2-3 sentences), practical suggestion for the "${category}" category. Reference the handbook where relevant, and keep the language simple and actionable.\n\nStudent Handbook Excerpt:\n${truncatedHandbook}\n\nReport Summary:\n${summary}\n\nSuggestion:`;
+    const prompt = `You are a helpful school discipline analyst. Using the student handbook excerpt and the provided data summary, write a SHORT, structured markdown report for the category "${category}". Keep items concise, concrete, and school-appropriate. Do not include prefaces or concluding fluff. Use the following section order and headings exactly. Where a section has no signal, omit it.
+
+Data Summary (JSON):
+${summary}
+
+Student Handbook Excerpt (for reference only):
+${truncatedHandbook}
+
+Output format (markdown):
+### Trends Noticed
+- item
+
+### Immediate Actions
+- item
+
+### Follow-up Steps
+- item
+
+### Prevention Strategies
+- item
+
+### Demographics Insights
+- item
+
+### Comparative Analysis
+- item
+
+### Possible Underlying Reasons
+- item
+
+### Records Needed
+- item
+
+### Overall Recommendation
+- single short paragraph
+
+Constraints:
+- Max 6 bullets per list.
+- Be specific (who/what/when) and actionable.
+- Reference handbook practices only when helpful (no citations).`;
 
     const message = await anthropic.messages.create({
       model: 'claude-3-5-haiku-20241022',
