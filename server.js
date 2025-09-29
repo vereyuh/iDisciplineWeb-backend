@@ -52,56 +52,6 @@ const SEMAPHORE_SENDER_NAME = process.env.SEMAPHORE_SENDER_NAME || 'iDiscipline'
 const SENDGRID_FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL || 'balduezaraven@gmail.com';
 const SENDGRID_FROM_NAME = process.env.SENDGRID_FROM_NAME || process.env.SENDGRID_SENDER_NAME || 'iDiscipline';
 
-// Function to send SMS via Semaphore
-async function sendSMS(phoneNumber, message) {
-  try {
-    console.log('📱 Attempting to send SMS to:', phoneNumber);
-    console.log('📝 Message length:', message.length);
-    console.log('🔑 API Key available:', !!SEMAPHORE_API_KEY);
-    console.log('📱 Sender name:', SEMAPHORE_SENDER_NAME);
-    
-    if (!SEMAPHORE_API_KEY) {
-      console.error('❌ SEMAPHORE_API_KEY is not set!');
-      return { success: false, error: 'SMS service not configured. Missing API key.' };
-    }
-    
-    // Semaphore API expects parameters as query parameters, not in body
-    const params = new URLSearchParams({
-      apikey: SEMAPHORE_API_KEY,
-      number: phoneNumber,
-      message: message,
-      sendername: SEMAPHORE_SENDER_NAME
-    });
-    
-    const response = await fetch(`https://api.semaphore.co/api/v4/messages?${params}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      }
-    });
-
-    const result = await response.json();
-    console.log('📊 Semaphore API Response:', result);
-    
-    // Check if the response contains an error message
-    if (result && result.number && result.number.includes('The number format is invalid')) {
-      console.error('❌ Invalid phone number format:', phoneNumber);
-      return { success: false, error: 'Invalid phone number format. Please check the contact number.' };
-    }
-    
-    if (response.ok && result && !result.number) {
-      console.log('✅ SMS sent successfully:', result);
-      return { success: true, data: result };
-    } else {
-      console.error('❌ SMS sending failed:', result);
-      return { success: false, error: result.message || 'Failed to send SMS' };
-    }
-  } catch (error) {
-    console.error('💥 Error sending SMS:', error);
-    return { success: false, error: error.message };
-  }
-}
-
 // Anthropic setup
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
