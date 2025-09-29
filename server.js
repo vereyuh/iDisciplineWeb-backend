@@ -18,6 +18,21 @@ const xlsx = require('xlsx');
 
 // Load environment variables
 dotenv.config();
+
+// Smart backend URL detection
+const getBackendUrl = () => {
+  // Check if we're running locally (development)
+  if (process.env.NODE_ENV === 'development' || 
+      process.env.NODE_ENV === undefined || 
+      process.env.PORT === undefined) {
+    return 'http://localhost:5000';
+  }
+  // Production environment
+  return process.env.BACKEND_URL || 'https://idisciplineweb-backend.onrender.com';
+};
+
+const BACKEND_URL = getBackendUrl();
+console.log(`🌐 Backend URL: ${BACKEND_URL}`);
 console.log("Anthropic API Key loaded:", process.env.ANTHROPIC_API_KEY ? "YES" : "NO");
 
 // Initialize Supabase Client (Admin)
@@ -28,6 +43,64 @@ const supabase = createClient(
 
 // Set your SendGrid API key
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
+// Semaphore SMS setup
+const SEMAPHORE_API_KEY = process.env.SEMAPHORE_API_KEY;
+const SEMAPHORE_SENDER_NAME = process.env.SEMAPHORE_SENDER_NAME || 'iDiscipline';
+
+// SendGrid sender defaults (support both FROM_NAME and SENDER_NAME)
+const SENDGRID_FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL || 'balduezaraven@gmail.com';
+const SENDGRID_FROM_NAME = process.env.SENDGRID_FROM_NAME || process.env.SENDGRID_SENDER_NAME || 'iDiscipline';
+
+// Function to send SMS via Semaphore
+async function sendSMS(phoneNumber, message) {
+  try {
+    console.log('📱 Attempting to send SMS to:', phoneNumber);
+    console.log('📝 Message length:', message.length);
+    console.log('🔑 API Key available:', !!SEMAPHORE_API_KEY);
+    console.log('📱 Sender name:', SEMAPHORE_SENDER_NAME);
+    
+    if (!SEMAPHORE_API_KEY) {
+      console.error('❌ SEMAPHORE_API_KEY is not set!');
+      return { success: false, error: 'SMS service not configured. Missing API key.' };
+    }
+    
+    // Semaphore API expects parameters as query parameters, not in body
+    const params = new URLSearchParams({
+      apikey: SEMAPHORE_API_KEY,
+      number: phoneNumber,
+      message: message,
+      sendername: SEMAPHORE_SENDER_NAME
+    });
+    
+    const response = await fetch(`https://api.semaphore.co/api/v4/messages?${params}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      }
+    });
+
+    const result = await response.json();
+    console.log('📊 Semaphore API Response:', result);
+    
+    // Check if the response contains an error message
+    if (result && result.number && result.number.includes('The number format is invalid')) {
+      console.error('❌ Invalid phone number format:', phoneNumber);
+      return { success: false, error: 'Invalid phone number format. Please check the contact number.' };
+    }
+    
+    if (response.ok && result && !result.number) {
+      console.log('✅ SMS sent successfully:', result);
+      return { success: true, data: result };
+    } else {
+      console.error('❌ SMS sending failed:', result);
+      return { success: false, error: result.message || 'Failed to send SMS' };
+    }
+  } catch (error) {
+    console.error('💥 Error sending SMS:', error);
+    return { success: false, error: error.message };
+  }
+}
 
 // Anthropic setup
 const anthropic = new Anthropic({
@@ -66,25 +139,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Trust proxy to correctly read x-forwarded-* headers on platforms like Vercel
-app.set('trust proxy', 1);
-
-// Helper to compute the absolute base URL for links
-function getBaseUrl(req) {
-  if (process.env.BACKEND_URL && process.env.BACKEND_URL.trim() !== '') {
-    return process.env.BACKEND_URL.replace(/\/+$/, '');
-  }
-  if (process.env.VERCEL_URL && process.env.VERCEL_URL.trim() !== '') {
-    const raw = process.env.VERCEL_URL;
-    const withProtocol = raw.startsWith('http') ? raw : `https://${raw}`;
-    return withProtocol.replace(/\/+$/, '');
-  }
-  const forwardedProto = (req.headers['x-forwarded-proto'] || '').toString().split(',')[0];
-  const protocol = forwardedProto || req.protocol || 'http';
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
-  return `${protocol}://${host}`;
-}
-
 const upload = multer({ dest: 'uploads/' });
 
 // 1. Send Verification Email Route - UPDATED
@@ -101,12 +155,11 @@ app.post('/send-verification-email', async (req, res) => {
   try {
     console.log(`📧 Sending verification email to ${email} with token: ${token}`);
     
-    const baseUrl = getBaseUrl(req);
-    const verificationLink = `${baseUrl}/verify-email?token=${token}`;
+    const verificationLink = `${BACKEND_URL}/verify-email?token=${token}`;
     
     const msg = {
       to: email,
-      from: process.env.SENDGRID_FROM_EMAIL || 'balduezaraven@gmail.com',
+      from: { email: SENDGRID_FROM_EMAIL, name: SENDGRID_FROM_NAME },
       subject: 'Welcome to iDiscipline - Verify Your Email (IMPORTANT)',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -461,7 +514,7 @@ app.get('/verify-admin-email', async (req, res) => {
           <div class="checkmark">✅</div>
           <div class="success">Admin Account Verified Successfully!</div>
           <div class="message">
-            Hi ${admin.firstname || 'Admin'},<br>
+            Hi ${admin.first_name || admin.firstname || 'Admin'},<br>
             Your admin account has been verified successfully.<br>
             You can now login to the admin portal using your email and password.
           </div>
@@ -615,12 +668,11 @@ app.post('/resend-verification-link', async (req, res) => {
     }
 
     // Send new verification email
-    const baseUrl = getBaseUrl(req);
-    const verificationLink = `${baseUrl}/verify-email?token=${newToken}`;
+    const verificationLink = `${BACKEND_URL}/verify-email?token=${newToken}`;
     
     const msg = {
       to: email,
-      from: process.env.SENDGRID_FROM_EMAIL || 'balduezaraven@gmail.com',
+      from: { email: SENDGRID_FROM_EMAIL, name: SENDGRID_FROM_NAME },
       subject: 'New Verification Link - iDiscipline (IMPORTANT)',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -668,6 +720,132 @@ app.post('/resend-verification-link', async (req, res) => {
       success: false, 
       message: 'Failed to resend verification email', 
       error: error.message 
+    });
+  }
+});
+
+// 3.6. Resend Admin Verification Link Route - NEW
+app.post('/resend-admin-verification-link', async (req, res) => {
+  const { email, name } = req.body;
+  
+  if (!email || !name) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Missing required fields: email, name' 
+    });
+  }
+
+  try {
+    console.log(`📧 Resending admin verification email to ${email}`);
+    
+    // First check if current token is expired
+    const { data: admin, error: findError } = await supabase
+      .from('users')
+      .select('created_at, token_verification, status')
+      .eq('email', email)
+      .single();
+
+    if (findError || !admin) {
+      throw new Error('Admin not found');
+    }
+
+    if (admin.status === 'active') {
+      return res.status(400).json({
+        success: false,
+        message: 'Admin is already verified'
+      });
+    }
+
+    // Check if current token is expired (24 hours)
+    const tokenCreated = new Date(admin.created_at);
+    const now = new Date();
+    const hoursDiff = (now - tokenCreated) / (1000 * 60 * 60);
+    
+    if (hoursDiff <= 24) {
+      return res.status(400).json({
+        success: false,
+        message: `Current verification link is still valid for ${Math.ceil(24 - hoursDiff)} more hours. Please use the existing link.`
+      });
+    }
+
+    console.log(`✅ Token expired, generating new verification for ${email}`);
+    
+    // Generate new password and token
+    const newPassword = Math.random().toString(36).slice(-8);
+    const newToken = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+    
+    // Update admin with new token, password, and reset created_at for new 24-hour window
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ 
+        token_verification: newToken,
+        password_hash: newPassword,
+        status: 'inactive',
+        created_at: new Date().toISOString() // Reset the 24-hour timer
+      })
+      .eq('email', email);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    // Update Supabase Auth user password
+    try {
+      const { data: authUsers, error: findAuthError } = await supabase.auth.admin.listUsers();
+      
+      if (!findAuthError && authUsers.users) {
+        const authUser = authUsers.users.find(user => user.email === email);
+        
+        if (authUser) {
+          const { error: authError } = await supabase.auth.admin.updateUserById(
+            authUser.id,
+            { password: newPassword }
+          );
+          
+          if (authError) {
+            console.log('⚠️ Warning: Could not update Supabase Auth user password:', authError.message);
+          } else {
+            console.log('✅ Supabase Auth user password updated successfully');
+          }
+        }
+      }
+    } catch (authError) {
+      console.log('⚠️ Warning: Could not update Supabase Auth user password:', authError.message);
+    }
+
+    // Send new verification email
+    const response = await fetch(`${BACKEND_URL}/send-admin-verification-email`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email,
+        name,
+        password: newPassword,
+        token: newToken,
+        role: 'Admin'
+      }),
+    });
+
+    if (response.ok) {
+      console.log(`✅ New admin verification email sent to ${email}`);
+      res.status(200).json({ 
+        success: true, 
+        message: 'New admin verification email sent successfully' 
+      });
+    } else {
+      const errorData = await response.json();
+      throw new Error(errorData.message || 'Failed to send admin verification email');
+    }
+    
+  } catch (error) {
+    console.error("🔥 Error resending admin verification email:", error.message);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
     });
   }
 });
@@ -810,6 +988,224 @@ app.post('/api/ask-handbook', async (req, res) => {
   }
 });
 
+// --- Lightweight Web Chatbot Endpoints (aligned with mobile pattern) ---
+// Derive a coarse category from a question
+function deriveQuestionCategory(q) {
+  const text = (q || '').toLowerCase();
+  if (/dress|uniform|groom|hair|attire/.test(text)) return 'dressCode';
+  if (/attend|absen|tardy|late/.test(text)) return 'attendance';
+  if (/appeal|challenge|dispute|contest/.test(text)) return 'appeals';
+  if (/bully/.test(text)) return 'bullying';
+  if (/suspend/.test(text)) return 'suspension';
+  if (/expel|expulsion|dismiss/.test(text)) return 'expulsion';
+  if (/category\s*c/.test(text)) return 'categoryC';
+  if (/category\s*b|cheat|plagiar|gambl|alcohol|vandal/.test(text)) return 'majorOffensesB';
+  if (/category\s*a|disrespect|fight|pda|cutting|record/.test(text)) return 'majorOffensesA';
+  if (/minor|id\s*violation|tardi|loiter|litter/.test(text)) return 'minorOffenses';
+  if (/violation|offense|rule/.test(text)) return 'violations';
+  return 'general';
+}
+
+function getCategoryList() {
+  return [
+    { key: 'violations', title: 'Student Conduct and Discipline' },
+    { key: 'attendance', title: 'Attendance' },
+    { key: 'dressCode', title: 'Dress Code' },
+    { key: 'minorOffenses', title: 'Minor Offenses' },
+    { key: 'majorOffensesA', title: 'Major Offenses Category A' },
+    { key: 'majorOffensesB', title: 'Major Offenses Category B' },
+    { key: 'categoryC', title: 'Destructive & Harmful Offenses (Category C)' },
+    { key: 'bullying', title: 'Anti-Bullying' },
+    { key: 'appeals', title: 'Appeals Process' },
+    { key: 'suspension', title: 'Suspension' },
+    { key: 'expulsion', title: 'Expulsion' }
+  ];
+}
+
+function getSuggestionsForCategory(cat) {
+  const s = {
+    violations: [
+      'What are the violation categories?',
+      'What happens if I break a rule?',
+      'How are violations classified?'
+    ],
+    attendance: [
+      'What is the attendance policy?',
+      'How many absences are allowed?',
+      'What are sanctions for tardiness?'
+    ],
+    dressCode: [
+      'What is the dress code?',
+      'What are the grooming rules?',
+      'What happens if I violate dress code?'
+    ],
+    minorOffenses: [
+      'What are minor offenses?',
+      'Sanctions for minor violations',
+      'Examples of minor offenses'
+    ],
+    majorOffensesA: [
+      'What are Major Offenses Category A?',
+      'Sanctions for Category A offenses',
+      'What happens for repeated violations?'
+    ],
+    majorOffensesB: [
+      'What are Major Offenses Category B?',
+      'What is the penalty for cheating?',
+      'Sanctions for Category B offenses'
+    ],
+    categoryC: [
+      'What are Category C offenses?',
+      'Consequences for drugs or weapons?',
+      'Fraternities or hazing consequences'
+    ],
+    bullying: [
+      'What happens if I bully someone?',
+      'How is bullying handled?',
+      'Anti-bullying policy'
+    ],
+    suspension: [
+      'What is the suspension policy?',
+      'How long can I be suspended?',
+      'What happens during suspension?'
+    ],
+    expulsion: [
+      'What is expulsion?',
+      'When can I be expelled?',
+      'Consequences of expulsion'
+    ],
+    appeals: [
+      'How do I appeal a decision?',
+      'What is the appeals process?',
+      'Can I challenge a violation?'
+    ],
+    general: [
+      'What are the violation types?',
+      'What is the dress code?',
+      'What are the attendance rules?'
+    ]
+  };
+  return s[cat] || s.general;
+}
+
+// Lightweight FAQ patterns (from mobile reference, condensed)
+const CHATBOT_FAQ = {
+  dressCode: {
+    faqs: [
+      {
+        q: /((what\s+happens\s+if)\s+.*dress\s*code)|((violate|violation|break|penalt|penalty|sanction|consequence).*(dress\s*code|uniform|groom))|((dress\s*code|uniform|groom).*(violate|violation|break|penalt|penalty|sanction|consequence))/i,
+        a: (
+          'Dress Code sanctions (summary):\n' +
+          '- 1st offense: reminder/counseling; may issue Disciplinary Notification Form (DNF).\n' +
+          '- Repeated: Disciplinary Warning Form (DWF) and parent conference.\n' +
+          '- Further/repeated non‑compliance: suspension possible; may be treated as Major Offense.\n' +
+          'Follow grooming rules and uniform policy to avoid escalation.'
+        )
+      },
+      {
+        q: /what\s+is\s+the\s+dress\s*code|uniform|groom/i,
+        a: (
+          'Students must be presentable and modest.\n' +
+          '- Boys: navy pants, white polo with school patch, black leather shoes, clean 2x3/3x4 haircut.\n' +
+          '- Girls: gray/white checkered skirt, white blouse with patch, ribbon/tie, black shoes.\n' +
+          'PE uniforms only on PE days; ID must be worn at all times.'
+        )
+      },
+      {
+        q: /.*/,
+        a: (
+          'Dress Code highlights:\n' +
+          '- Wear school uniform and ID at all times.\n' +
+          '- Follow grooming rules (clean haircut; no make‑up, long/polished nails, jewelry/piercings, tattoos).\n' +
+          '- PE uniform only on PE days.'
+        )
+      }
+    ],
+    keywords: ['dress','uniform','groom','haircut','attire','clothing']
+  },
+  attendance: {
+    faqs: [
+      { q: /.*/, a: 'Absences over 20% of class days may lead to failing grade unless excused. Provide excuse letter/medical certificate; prolonged absences require parental notice.' }
+    ],
+    keywords: ['attendance','absent','tardy','late']
+  },
+  violations: {
+    faqs: [
+      { q: /.*/, a: 'Violations are classified as Minor Offenses, Major Offenses (Category A/B), and Category C (Destructive & Harmful). Sanctions escalate with repeats and severity.' }
+    ],
+    keywords: ['violation','offense','rule']
+  }
+};
+
+function getFAQAnswer(category, question) {
+  const entry = CHATBOT_FAQ[category];
+  if (!entry) return null;
+  for (const item of entry.faqs) {
+    if (item.q.test(question)) return item.a;
+  }
+  return entry.faqs[0]?.a || null;
+}
+
+function extractTopHandbookPassagesFocused(question, fullText, focusKeywords = [], options = {}) {
+  const maxPassages = options.maxPassages || 3;
+  if (!fullText) return [];
+  const lowerFocus = (focusKeywords || []).map(k => String(k).toLowerCase());
+  const paras = fullText.split(/\n\s*\n+/).map(p => p.trim()).filter(Boolean);
+  let pool = paras;
+  if (lowerFocus.length > 0) {
+    pool = paras.filter(p => {
+      const lp = p.toLowerCase();
+      return lowerFocus.some(k => lp.includes(k));
+    });
+    if (pool.length === 0) pool = paras; // fallback
+  }
+  const qTokens = String(question).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const scored = pool.map(p => {
+    const lp = p.toLowerCase();
+    let score = 0;
+    for (const t of qTokens) if (lp.includes(t)) score += 2;
+    for (const fk of lowerFocus) if (lp.includes(fk)) score += 1;
+    return { p, score };
+  });
+  scored.sort((a,b) => b.score - a.score);
+  const top = scored.slice(0, maxPassages).filter(s => s.score > 0).map(s => s.p);
+  return top;
+}
+
+app.get('/api/chatbot/categories', async (_req, res) => {
+  res.json({ success: true, categories: getCategoryList() });
+});
+
+app.post('/api/chatbot/ask', async (req, res) => {
+  try {
+    const { question } = req.body || {};
+    if (!question || typeof question !== 'string') {
+      return res.status(400).json({ error: 'Question is required' });
+    }
+    const cat = deriveQuestionCategory(question);
+    // 1) Try concise FAQ answer first for this category
+    const faqAnswer = getFAQAnswer(cat, question);
+
+    // 2) Also extract focused passages from the handbook for context
+    let handbookText = '';
+    try {
+      const pdfPath = '../public/docs/studenthandbook.pdf';
+      const dataBuffer = fs.readFileSync(pdfPath);
+      const parsed = await pdfParse(dataBuffer);
+      const pdfText = parsed.text || '';
+      const focusKeywords = (CHATBOT_FAQ[cat]?.keywords) || [];
+      const passages = extractTopHandbookPassagesFocused(question, pdfText, focusKeywords, { maxPassages: 2 });
+      handbookText = passages.join('\n\n');
+    } catch {}
+
+    const finalText = faqAnswer || handbookText || 'No directly relevant section found in the handbook for that question.';
+    res.json({ text: finalText, suggestions: getSuggestionsForCategory(cat), category: cat, source: faqAnswer ? 'FAQ' : 'Student Handbook' });
+  } catch (err) {
+    console.error('chatbot ask error:', err);
+    res.status(500).json({ error: 'Failed to process question' });
+  }
+});
+
 // Bulk upload students from Excel
 app.post('/api/bulk-upload-students', upload.single('file'), async (req, res) => {
   try {
@@ -908,15 +1304,31 @@ app.post('/api/bulk-upload-students', upload.single('file'), async (req, res) =>
       const rowErrors = [];
       const processedRow = {};
 
-      // Check for missing required fields
-      const missingFields = requiredFields.filter(col => !row[col]);
-      if (missingFields.length > 0) {
+      // Only block on invalid student email format (empty or wrong format) - this is the only critical validation
+      const studentEmail = row['Student Email'];
+      const isEmptyEmail = !studentEmail || String(studentEmail).trim() === '';
+      const hasWrongFormat = studentEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(studentEmail);
+      
+      if (isEmptyEmail || hasWrongFormat) {
+        const errorMessage = isEmptyEmail 
+          ? 'Student Email is required and cannot be empty'
+          : `Invalid student email format: ${studentEmail}. Email must contain @ symbol and valid domain (e.g., student@example.com)`;
+        
         errors.push({
           row: idx + 2,
-          errors: [`Missing required fields: ${missingFields.join(', ')}`],
+          errors: [errorMessage],
           data: row
         });
         return; // Do not process further or insert
+      }
+
+      // Check for parent contact requirement (either Parent Email OR Contact No. must be provided)
+      const hasParentEmail = row['Parent Email'] && String(row['Parent Email']).trim() !== '';
+      const hasContactNo = row['Contact No.'] && String(row['Contact No.']).trim() !== '';
+      
+      if (!hasParentEmail && !hasContactNo) {
+        rowErrors.push('Either Parent Email OR Contact No. must be provided for parent/guardian contact');
+        // Don't return here - let it continue processing but mark as error
       }
 
       // Process and validate each field
@@ -947,7 +1359,7 @@ app.post('/api/bulk-upload-students', upload.single('file'), async (req, res) =>
             break;
           case 'Student Email':
             if (!isValidEmail(value)) {
-              rowErrors.push(`Invalid email format: ${value}`);
+              rowErrors.push(`Invalid email format: ${value}. Email must contain @ symbol and valid domain (e.g., student@example.com)`);
             }
             break;
           case 'First Name':
@@ -955,6 +1367,33 @@ app.post('/api/bulk-upload-students', upload.single('file'), async (req, res) =>
             value = value.split(' ')
               .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
               .join(' ');
+            break;
+          case 'Contact No.':
+            // Format contact number to standard +639XXXXXXXXX format
+            if (value) {
+              // Remove all spaces and special characters except +
+              value = value.replace(/[\s\-\(\)]/g, '');
+              
+              // Handle different input formats
+              if (value.startsWith('+63')) {
+                // Already has +63 prefix, just ensure no spaces
+                value = value;
+              } else if (value.startsWith('63')) {
+                // Has 63 prefix, add +
+                value = `+${value}`;
+              } else if (value.startsWith('0')) {
+                // Has 0 prefix, replace with +63
+                value = `+63${value.substring(1)}`;
+              } else {
+                // No prefix, add +63
+                value = `+63${value}`;
+              }
+              
+              // Validate final format (should be +63 followed by 10 digits)
+              if (!/^\+63\d{10}$/.test(value)) {
+                rowErrors.push(`Invalid contact number format: ${row[excelCol]}. Expected format: +63XXXXXXXXXX or 0XXXXXXXXXX or XXXXXXXXXX`);
+              }
+            }
             break;
         }
         processedRow[dbCol] = value;
@@ -998,8 +1437,32 @@ app.post('/api/bulk-upload-students', upload.single('file'), async (req, res) =>
       let failList = [];
       if (rows.length === 0) return { successList, failList };
       
+      // Check for existing students to avoid duplicates
+      const emails = rows.map(row => row.studentemail);
+      const { data: existingStudents, error: checkError } = await supabase
+        .from('students')
+        .select('studentemail')
+        .in('studentemail', emails);
+      
+      if (checkError) {
+        console.error('Error checking existing students:', checkError);
+      }
+      
+      const existingEmails = new Set(existingStudents?.map(s => s.studentemail) || []);
+      const uniqueRows = rows.filter(row => !existingEmails.has(row.studentemail));
+      const duplicateRows = rows.filter(row => existingEmails.has(row.studentemail));
+      
+      if (duplicateRows.length > 0) {
+        console.log(`⚠️ Skipping ${duplicateRows.length} duplicate students:`, duplicateRows.map(r => r.studentemail));
+      }
+      
+      if (uniqueRows.length === 0) {
+        console.log('All students already exist, skipping insertion');
+        return { successList: [], failList: duplicateRows.map(row => ({ ...row, error: 'Student already exists' })) };
+      }
+      
       // Try batch insert first
-      const { data, error } = await supabase.from('students').insert(rows).select();
+      const { data, error } = await supabase.from('students').insert(uniqueRows).select();
       if (!error) {
         successList = (data || []).map(s => ({ 
           firstname: s.firstname, 
@@ -1013,7 +1476,7 @@ app.post('/api/bulk-upload-students', upload.single('file'), async (req, res) =>
       }
       
       // If batch insert fails, try one by one
-      for (const row of rows) {
+      for (const row of uniqueRows) {
         const { data: singleData, error: singleError } = await supabase.from('students').insert([row]).select();
         if (!singleError && singleData && singleData.length > 0) {
           successList.push({ 
@@ -1066,7 +1529,19 @@ app.post('/api/bulk-upload-students', upload.single('file'), async (req, res) =>
     
     for (const student of allStudents) {
       try {
-        // First, create the Supabase Auth user
+        // Check if Supabase Auth user already exists
+        console.log(`🔍 Checking if Supabase Auth user exists for ${student.studentemail}...`);
+        
+        const { data: existingUsers, error: listError } = await supabase.auth.admin.listUsers();
+        const existingUser = existingUsers?.users?.find(user => user.email === student.studentemail);
+        
+        if (existingUser) {
+          console.log(`⚠️ Supabase Auth user already exists for ${student.studentemail}, skipping creation`);
+          verificationEmailsSent++;
+          continue; // Skip to next student
+        }
+        
+        // Create the Supabase Auth user
         console.log(`🔐 Creating Supabase Auth user for ${student.studentemail}...`);
         
         const { data: authData, error: authError } = await supabase.auth.admin.createUser({
@@ -1093,7 +1568,7 @@ app.post('/api/bulk-upload-students', upload.single('file'), async (req, res) =>
         console.log(`✅ Supabase Auth user created for ${student.studentemail}`);
 
         // Now send verification email
-        const response = await fetch(`${process.env.BACKEND_URL || 'http://localhost:5000'}/send-verification-email`, {
+        const response = await fetch(`${BACKEND_URL}/send-verification-email`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1165,12 +1640,11 @@ app.post('/send-admin-verification-email', async (req, res) => {
   try {
     console.log(`📧 Sending admin verification email to ${email} with token: ${token}`);
     
-    const baseUrl = getBaseUrl(req);
-    const verificationLink = `${baseUrl}/verify-admin-email?token=${token}`;
+    const verificationLink = `${BACKEND_URL}/verify-admin-email?token=${token}`;
     
     const msg = {
       to: email,
-      from: process.env.SENDGRID_FROM_EMAIL || 'balduezaraven@gmail.com',
+      from: { email: SENDGRID_FROM_EMAIL, name: SENDGRID_FROM_NAME },
       subject: 'Welcome to iDiscipline - Admin Account Verification (IMPORTANT)',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -1237,7 +1711,7 @@ app.post('/send-parent-email', async (req, res) => {
 
   const msg = {
     to: parentEmail,
-    from: process.env.SENDGRID_FROM_EMAIL || 'balduezaraven@gmail.com',
+    from: { email: SENDGRID_FROM_EMAIL, name: SENDGRID_FROM_NAME },
     subject: `Notification: Disciplinary Incident for ${studentName}`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -1264,6 +1738,116 @@ app.post('/send-parent-email', async (req, res) => {
   } catch (error) {
     console.error('💥 Error sending parent notification email:', error);
     res.status(500).json({ success: false, message: 'Failed to send parent notification email.', error: error.message });
+  }
+});
+
+// 7. Send SMS to parent
+app.post('/send-parent-sms', async (req, res) => {
+  console.log('🚀 SMS endpoint hit on Vercel!');
+  console.log('🔑 SEMAPHORE_API_KEY exists:', !!SEMAPHORE_API_KEY);
+  console.log('📱 SEMAPHORE_SENDER_NAME:', SEMAPHORE_SENDER_NAME);
+  
+  const { 
+    parentPhone, 
+    parentName, 
+    studentName, 
+    violationCategory, 
+    violationType, 
+    timeReported, 
+    notes, 
+    status,
+    // Appointment fields
+    messageType,
+    appointmentType,
+    appointmentDate,
+    appointmentTime,
+    location,
+    caseNumber
+  } = req.body;
+  
+  console.log('📥 SMS Request body:', req.body);
+
+  if (!parentPhone || !parentName || !studentName) {
+    return res.status(400).json({ success: false, message: 'Missing required fields.' });
+  }
+
+  // Format phone number for Semaphore API
+  console.log('📞 Original phone number:', parentPhone);
+  let formattedPhone = parentPhone.replace(/\D/g, ''); // Remove all non-digits
+  console.log('📞 After removing non-digits:', formattedPhone);
+  
+  // Semaphore API expects format like 09123456789 (without +63)
+  if (formattedPhone.startsWith('63')) {
+    // If it starts with 63, remove it and add 0
+    formattedPhone = '0' + formattedPhone.substring(2);
+  } else if (formattedPhone.startsWith('+63')) {
+    // If it starts with +63, remove +63 and add 0
+    formattedPhone = '0' + formattedPhone.substring(3);
+  } else if (!formattedPhone.startsWith('0')) {
+    // If it doesn't start with 0, add 0
+    formattedPhone = '0' + formattedPhone;
+  }
+  
+  console.log('📞 Final formatted phone for Semaphore:', formattedPhone);
+
+  // Create SMS message based on message type
+  let message;
+  
+  console.log('📱 SMS Request Debug:', {
+    messageType,
+    appointmentType,
+    appointmentDate,
+    appointmentTime,
+    location,
+    caseNumber,
+    parentName,
+    studentName
+  });
+  
+  console.log('📱 MessageType check:', {
+    messageType,
+    type: typeof messageType,
+    strictEqual: messageType === 'appointment',
+    looseEqual: messageType == 'appointment'
+  });
+  
+  console.log('📱 Appointment data check:', {
+    appointmentType,
+    appointmentDate,
+    appointmentTime,
+    location,
+    caseNumber,
+    notes
+  });
+  
+  if (messageType === 'appointment') {
+    // Appointment SMS format
+    console.log('📱 Using appointment SMS format');
+    message = `Dear ${parentName},\n\nThis is to inform you about your child's Parent-Teacher Conference (PTC) appointment at Mary Immaculate Parish Special School.\n\nStudent: ${studentName}\nAppointment Type: ${appointmentType || 'PTC'}\nDate: ${appointmentDate || 'N/A'}\nTime: ${appointmentTime || 'N/A'}\nLocation: ${location || 'School Office'}\nStatus: ${status || 'N/A'}\nCase Number: ${caseNumber || 'N/A'}\nNotes: ${notes || 'No additional details provided.'}\n\nIf you have any questions or concerns, please contact the school office.\n\nThis is an automated message from iDiscipline.`;
+  } else {
+    // Default violation SMS format
+    console.log('📱 Using violation SMS format (messageType:', messageType, ')');
+    console.log('📱 Violation data check:', {
+      violationCategory,
+      violationType,
+      timeReported,
+      notes,
+      status
+    });
+    message = `Dear ${parentName},\n\nThis is to inform you that your child, ${studentName}, has been reported for a disciplinary incident at school.\n\nStatus: ${status || 'N/A'}\nViolation Category: ${violationCategory || 'N/A'}\nViolation Type: ${violationType || 'N/A'}\nTime Reported: ${timeReported || 'N/A'}\nNotes: ${notes || 'N/A'}\n\nIf you have any questions or concerns, please contact the school office.\n\nThis is an automated message from iDiscipline.`;
+  }
+
+  try {
+    const result = await sendSMS(formattedPhone, message);
+    
+    if (result.success) {
+      res.status(200).json({ success: true, message: 'Parent notification SMS sent successfully.' });
+    } else {
+      res.status(500).json({ success: false, message: 'Failed to send parent notification SMS.', error: result.error });
+    }
+  } catch (error) {
+    console.error('💥 Error sending parent notification SMS:', error);
+    res.status(500).json({ success: false, message: 'Failed to send parent notification SMS.', error: error.message });
   }
 });
 
@@ -1436,7 +2020,46 @@ app.post('/api/report-suggestion', async (req, res) => {
 
     // Compose prompt with truncated handbook text to reduce token usage
     const truncatedHandbook = handbookText.substring(0, 8000); // Limit to ~8000 characters
-    const prompt = `You are a helpful school assistant. Based on the following student handbook excerpt and the provided report summary, give a concise (2-3 sentences), practical suggestion for the "${category}" category. Reference the handbook where relevant, and keep the language simple and actionable.\n\nStudent Handbook Excerpt:\n${truncatedHandbook}\n\nReport Summary:\n${summary}\n\nSuggestion:`;
+    const prompt = `You are a helpful school discipline analyst. Using the student handbook excerpt and the provided data summary, write a SHORT, structured markdown report for the category "${category}". Keep items concise, concrete, and school-appropriate. Do not include prefaces or concluding fluff. Use the following section order and headings exactly. Where a section has no signal, omit it.
+
+Data Summary (JSON):
+${summary}
+
+Student Handbook Excerpt (for reference only):
+${truncatedHandbook}
+
+Output format (markdown):
+### Trends Noticed
+- item
+
+### Immediate Actions
+- item
+
+### Follow-up Steps
+- item
+
+### Prevention Strategies
+- item
+
+### Demographics Insights
+- item
+
+### Comparative Analysis
+- item
+
+### Possible Underlying Reasons
+- item
+
+### Records Needed
+- item
+
+### Overall Recommendation
+- single short paragraph
+
+Constraints:
+- Max 6 bullets per list.
+- Be specific (who/what/when) and actionable.
+- Reference handbook practices only when helpful (no citations).`;
 
     const message = await anthropic.messages.create({
       model: 'claude-3-5-haiku-20241022',
@@ -1462,6 +2085,75 @@ app.post('/api/report-suggestion', async (req, res) => {
     } else {
       res.status(500).json({ error: err.message });
     }
+  }
+});
+
+// Securely delete a Supabase Auth user (service role required)
+app.post('/api/delete-auth-user', async (req, res) => {
+  try {
+    const { email, userId } = req.body || {};
+
+    if (!email && !userId) {
+      return res.status(400).json({ success: false, message: 'Provide email or userId' });
+    }
+
+    let targetUserId = userId;
+    if (!targetUserId && email) {
+      const normalized = String(email).toLowerCase();
+      // First try GoTrue Admin API direct email lookup (most reliable)
+      try {
+        const resp = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users?email=${encodeURIComponent(normalized)}`, {
+          method: 'GET',
+          headers: {
+            'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
+            'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          // GoTrue may return an array or an object with { users: [] }
+          const users = Array.isArray(data) ? data : (data && data.users ? data.users : []);
+          if (users && users.length > 0) {
+            const matched = users.find(u => (u.email || '').toLowerCase() === normalized) || users[0];
+            targetUserId = matched?.id || targetUserId;
+          }
+        }
+      } catch (gtErr) {
+        console.log('GoTrue email lookup failed, falling back to pagination:', gtErr?.message);
+      }
+
+      // Fallback: robust search across pages via SDK if still not found
+      if (!targetUserId) {
+        let page = 1;
+        const perPage = 1000;
+        let found = null;
+        while (page <= 10 && !found) {
+          const { data: authUsers, error: listErr } = await supabase.auth.admin.listUsers({ page, perPage });
+          if (listErr) {
+            throw listErr;
+          }
+          const users = authUsers?.users || [];
+          found = users.find(u => (u.email || '').toLowerCase() === normalized);
+          if (users.length < perPage) break; // no more pages
+          page += 1;
+        }
+        if (!found) {
+          return res.status(404).json({ success: false, message: 'Auth user not found for provided email' });
+        }
+        targetUserId = found.id;
+      }
+    }
+
+    const { error: delErr } = await supabase.auth.admin.deleteUser(targetUserId);
+    if (delErr) {
+      throw delErr;
+    }
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Error deleting auth user:', err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -1638,7 +2330,7 @@ app.post('/request-password-reset', async (req, res) => {
     
     const msg = {
       to: email,
-      from: process.env.SENDGRID_FROM_EMAIL || 'balduezaraven@gmail.com',
+      from: { email: SENDGRID_FROM_EMAIL, name: SENDGRID_FROM_NAME },
       subject: 'Password Reset Request - iDiscipline',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
