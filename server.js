@@ -229,38 +229,61 @@ app.post('/send-verification-email', async (req, res) => {
     const msg = {
       to: email,
       from: { email: SENDGRID_FROM_EMAIL, name: SENDGRID_FROM_NAME },
-      subject: 'Welcome to iDiscipline - Verify Your Email (IMPORTANT)',
+      subject: 'MIPSS Student Account Verification - Action Required',
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: rgb(39, 70, 132);">Welcome to iDiscipline!</h2>
-          <p>Hi ${name},</p>
-          <p>Your account has been created successfully. Here are your login credentials:</p>
-          <div style="background: #f5f7fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p><strong>Email:</strong> ${email}</p>
-            <p><strong>Password:</strong> ${password}</p>
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>MIPSS Student Account Verification</title>
+        </head>
+        <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f5f5f5;">
+          <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
+            <!-- Header Image -->
+            <div style="text-align: center; padding: 0; margin: 0;">
+              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/header.png" alt="MIPSS Header" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            </div>
+            
+            <!-- Main Content -->
+            <div style="padding: 40px 30px; background-color: #ffffff;">
+              <h1 style="color: #274684; font-size: 28px; font-weight: bold; margin: 0 0 20px 0; text-align: center;">Student Account Verification</h1>
+              
+              <p style="color: #333333; font-size: 16px; line-height: 1.5; margin: 0 0 20px 0;">Hello ${name},</p>
+              
+              <p style="color: #333333; font-size: 16px; line-height: 1.5; margin: 0 0 20px 0;">We received a request to verify your student account for the iDiscipline system. If you didn't make this request, you can safely ignore this email.</p>
+              
+              <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                <h3 style="color: #274684; font-size: 18px; margin: 0 0 15px 0;">Your Login Credentials:</h3>
+                <p style="color: #333333; font-size: 14px; margin: 5px 0;"><strong>Email:</strong> ${email}</p>
+                <p style="color: #333333; font-size: 14px; margin: 5px 0;"><strong>Password:</strong> ${password}</p>
+              </div>
+              
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${verificationLink}" style="background-color: #274684; color: #ffffff; padding: 15px 40px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold; font-size: 16px;">
+                  Verify Your Account
+                </a>
+              </div>
+              
+              <p style="color: #666666; font-size: 14px; text-align: center; margin: 20px 0;">Or copy and paste this link into your browser:</p>
+              <p style="color: #666666; font-size: 12px; word-break: break-all; background-color: #f8f9fa; padding: 10px; border-radius: 4px; margin: 10px 0;">${verificationLink}</p>
+              
+              <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; padding: 15px; margin: 20px 0;">
+                <p style="color: #856404; margin: 0; font-size: 14px;"><strong>Security Notice:</strong> This link will expire in 24 hours for your security. If you need more time, please request another verification link.</p>
+              </div>
+              
+              <p style="color: #333333; font-size: 14px; line-height: 1.5; margin: 20px 0;">If you have any questions or need assistance, please contact our support team.</p>
+              
+              <p style="color: #333333; font-size: 14px; line-height: 1.5; margin: 20px 0 0 0;">Best regards,<br>The iDiscipline Team</p>
+            </div>
+            
+            <!-- Footer Image -->
+            <div style="text-align: center; padding: 0; margin: 0;">
+              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/footer.png" alt="MIPSS Footer" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            </div>
           </div>
-          
-          <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p style="color: #856404; margin: 0;"><strong>⚠️ IMPORTANT:</strong> You may receive another email from Supabase. Please use THIS verification link below instead.</p>
-          </div>
-          
-          <p>To complete your registration, please click the verification link below:</p>
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${verificationLink}" style="background: rgb(39, 70, 132); color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
-              ✅ Verify Email Address
-            </a>
-          </div>
-          <p>If the button doesn't work, you can copy and paste this link into your browser:</p>
-          <p style="word-break: break-all; color: #666; font-size: 0.9em;">${verificationLink}</p>
-          
-          <div style="background: #e8f5e8; border: 1px solid #c3e6c3; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p style="color: #155724; margin: 0;"><strong>💡 Tip:</strong> After clicking the verification link above, you can ignore any other verification emails you receive.</p>
-          </div>
-          
-          <p style="margin-top: 30px; font-size: 0.9em; color: #666;">
-            This link will expire in 24 hours. If you didn't create this account, please ignore this email.
-          </p>
-        </div>
+        </body>
+        </html>
       `,
       text: `Welcome to iDiscipline!\n\nHi ${name},\n\nYour account has been created successfully. Here are your login credentials:\n\nEmail: ${email}\nPassword: ${password}\n\n⚠️ IMPORTANT: You may receive another email from Supabase. Please use THIS verification link instead.\n\nTo complete your registration, please visit this verification link:\n${verificationLink}\n\n💡 Tip: After clicking the verification link above, you can ignore any other verification emails you receive.\n\nThis link will expire in 24 hours. If you didn't create this account, please ignore this email.`
     };
@@ -742,34 +765,61 @@ app.post('/resend-verification-link', async (req, res) => {
     const msg = {
       to: email,
       from: { email: SENDGRID_FROM_EMAIL, name: SENDGRID_FROM_NAME },
-      subject: 'New Verification Link - iDiscipline (IMPORTANT)',
+      subject: 'MIPSS New Verification Link - Action Required',
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: rgb(39, 70, 132);">New Verification Link</h2>
-          <p>Hi ${name},</p>
-          <p>Your previous verification link has expired. Here are your new login credentials:</p>
-          <div style="background: #f5f7fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p><strong>Email:</strong> ${email}</p>
-            <p><strong>New Password:</strong> ${newPassword}</p>
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>MIPSS New Verification Link</title>
+        </head>
+        <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f5f5f5;">
+          <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
+            <!-- Header Image -->
+            <div style="text-align: center; padding: 0; margin: 0;">
+              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/header.png" alt="MIPSS Header" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            </div>
+            
+            <!-- Main Content -->
+            <div style="padding: 40px 30px; background-color: #ffffff;">
+              <h1 style="color: #274684; font-size: 28px; font-weight: bold; margin: 0 0 20px 0; text-align: center;">New Verification Link</h1>
+              
+              <p style="color: #333333; font-size: 16px; line-height: 1.5; margin: 0 0 20px 0;">Hello ${name},</p>
+              
+              <p style="color: #333333; font-size: 16px; line-height: 1.5; margin: 0 0 20px 0;">Your previous verification link has expired. Here are your new login credentials:</p>
+              
+              <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                <h3 style="color: #274684; font-size: 18px; margin: 0 0 15px 0;">Your Updated Login Credentials:</h3>
+                <p style="color: #333333; font-size: 14px; margin: 5px 0;"><strong>Email:</strong> ${email}</p>
+                <p style="color: #333333; font-size: 14px; margin: 5px 0;"><strong>New Password:</strong> ${newPassword}</p>
+              </div>
+              
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${verificationLink}" style="background-color: #274684; color: #ffffff; padding: 15px 40px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold; font-size: 16px;">
+                  Verify Your Account
+                </a>
+              </div>
+              
+              <p style="color: #666666; font-size: 14px; text-align: center; margin: 20px 0;">Or copy and paste this link into your browser:</p>
+              <p style="color: #666666; font-size: 12px; word-break: break-all; background-color: #f8f9fa; padding: 10px; border-radius: 4px; margin: 10px 0;">${verificationLink}</p>
+              
+              <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; padding: 15px; margin: 20px 0;">
+                <p style="color: #856404; margin: 0; font-size: 14px;"><strong>Security Notice:</strong> This link will expire in 24 hours for your security. If you need more time, please request another verification link.</p>
+              </div>
+              
+              <p style="color: #333333; font-size: 14px; line-height: 1.5; margin: 20px 0;">If you have any questions or need assistance, please contact our support team.</p>
+              
+              <p style="color: #333333; font-size: 14px; line-height: 1.5; margin: 20px 0 0 0;">Best regards,<br>The iDiscipline Team</p>
+            </div>
+            
+            <!-- Footer Image -->
+            <div style="text-align: center; padding: 0; margin: 0;">
+              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/footer.png" alt="MIPSS Footer" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            </div>
           </div>
-          
-          <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p style="color: #856404; margin: 0;"><strong>⚠️ IMPORTANT:</strong> This link will expire in 24 hours.</p>
-          </div>
-          
-          <p>To complete your registration, please click the verification link below:</p>
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${verificationLink}" style="background: rgb(39, 70, 132); color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
-              ✅ Verify Email Address
-            </a>
-          </div>
-          <p>If the button doesn't work, you can copy and paste this link into your browser:</p>
-          <p style="word-break: break-all; color: #666; font-size: 0.9em;">${verificationLink}</p>
-          
-          <p style="margin-top: 30px; font-size: 0.9em; color: #666;">
-            This link will expire in 24 hours. If you didn't request this, please contact support.
-          </p>
-        </div>
+        </body>
+        </html>
       `,
       text: `New Verification Link\n\nHi ${name},\n\nYour previous verification link has expired. Here are your new login credentials:\n\nEmail: ${email}\nNew Password: ${newPassword}\n\n⚠️ IMPORTANT: This link will expire in 24 hours.\n\nTo complete your registration, please visit this verification link:\n${verificationLink}\n\nThis link will expire in 24 hours. If you didn't request this, please contact support.`
     };
@@ -1714,39 +1764,62 @@ app.post('/send-admin-verification-email', async (req, res) => {
     const msg = {
       to: email,
       from: { email: SENDGRID_FROM_EMAIL, name: SENDGRID_FROM_NAME },
-      subject: 'Welcome to iDiscipline - Admin Account Verification (IMPORTANT)',
+      subject: 'MIPSS Admin Account Verification - Action Required',
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: rgb(39, 70, 132);">Welcome to iDiscipline Admin Portal!</h2>
-          <p>Hi ${name},</p>
-          <p>Your admin account has been created successfully. Here are your login credentials:</p>
-          <div style="background: #f5f7fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p><strong>Email:</strong> ${email}</p>
-            <p><strong>Password:</strong> ${password}</p>
-            <p><strong>Role:</strong> ${role || 'Admin'}</p>
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>MIPSS Admin Account Verification</title>
+        </head>
+        <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f5f5f5;">
+          <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
+            <!-- Header Image -->
+            <div style="text-align: center; padding: 0; margin: 0;">
+              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/header.png" alt="MIPSS Header" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            </div>
+            
+            <!-- Main Content -->
+            <div style="padding: 40px 30px; background-color: #ffffff;">
+              <h1 style="color: #274684; font-size: 28px; font-weight: bold; margin: 0 0 20px 0; text-align: center;">Admin Account Verification</h1>
+              
+              <p style="color: #333333; font-size: 16px; line-height: 1.5; margin: 0 0 20px 0;">Hello ${name},</p>
+              
+              <p style="color: #333333; font-size: 16px; line-height: 1.5; margin: 0 0 20px 0;">We received a request to verify your admin account for the iDiscipline system. If you didn't make this request, you can safely ignore this email.</p>
+              
+              <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                <h3 style="color: #274684; font-size: 18px; margin: 0 0 15px 0;">Your Login Credentials:</h3>
+                <p style="color: #333333; font-size: 14px; margin: 5px 0;"><strong>Email:</strong> ${email}</p>
+                <p style="color: #333333; font-size: 14px; margin: 5px 0;"><strong>Password:</strong> ${password}</p>
+                <p style="color: #333333; font-size: 14px; margin: 5px 0;"><strong>Role:</strong> ${role || 'Admin'}</p>
+              </div>
+              
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${verificationLink}" style="background-color: #274684; color: #ffffff; padding: 15px 40px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold; font-size: 16px;">
+                  Verify Admin Account
+                </a>
+              </div>
+              
+              <p style="color: #666666; font-size: 14px; text-align: center; margin: 20px 0;">Or copy and paste this link into your browser:</p>
+              <p style="color: #666666; font-size: 12px; word-break: break-all; background-color: #f8f9fa; padding: 10px; border-radius: 4px; margin: 10px 0;">${verificationLink}</p>
+              
+              <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; padding: 15px; margin: 20px 0;">
+                <p style="color: #856404; margin: 0; font-size: 14px;"><strong>Security Notice:</strong> This link will expire in 24 hours for your security. If you need more time, please request another verification link.</p>
+              </div>
+              
+              <p style="color: #333333; font-size: 14px; line-height: 1.5; margin: 20px 0;">If you have any questions or need assistance, please contact our support team.</p>
+              
+              <p style="color: #333333; font-size: 14px; line-height: 1.5; margin: 20px 0 0 0;">Best regards,<br>The iDiscipline Team</p>
+            </div>
+            
+            <!-- Footer Image -->
+            <div style="text-align: center; padding: 0; margin: 0;">
+              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/footer.png" alt="MIPSS Footer" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            </div>
           </div>
-          
-          <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p style="color: #856404; margin: 0;"><strong>⚠️ IMPORTANT:</strong> You may receive another email from Supabase. Please use THIS verification link below instead.</p>
-          </div>
-          
-          <p>To complete your admin account setup, please click the verification link below:</p>
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${verificationLink}" style="background: rgb(39, 70, 132); color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
-              ✅ Verify Admin Account
-            </a>
-          </div>
-          <p>If the button doesn't work, you can copy and paste this link into your browser:</p>
-          <p style="word-break: break-all; color: #666; font-size: 0.9em;">${verificationLink}</p>
-          
-          <div style="background: #e8f5e8; border: 1px solid #c3e6c3; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p style="color: #155724; margin: 0;"><strong>💡 Tip:</strong> After clicking the verification link above, you can ignore any other verification emails you receive.</p>
-          </div>
-          
-          <p style="margin-top: 30px; font-size: 0.9em; color: #666;">
-            This link will expire in 24 hours. If you didn't create this account, please ignore this email.
-          </p>
-        </div>
+        </body>
+        </html>
       `,
       text: `Welcome to iDiscipline Admin Portal!\n\nHi ${name},\n\nYour admin account has been created successfully. Here are your login credentials:\n\nEmail: ${email}\nPassword: ${password}\nRole: ${role || 'Admin'}\n\n⚠️ IMPORTANT: You may receive another email from Supabase. Please use THIS verification link instead.\n\nTo complete your admin account setup, please visit this verification link:\n${verificationLink}\n\n💡 Tip: After clicking the verification link above, you can ignore any other verification emails you receive.\n\nThis link will expire in 24 hours. If you didn't create this account, please ignore this email.`
     };
@@ -2395,35 +2468,60 @@ app.post('/request-password-reset', async (req, res) => {
     }
 
     // Send password reset email via SendGrid
-    const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password-confirm?token=${resetToken}`;
+    const resetLink = `${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/reset-password-confirm?token=${resetToken}`;
     
     const msg = {
       to: email,
       from: { email: SENDGRID_FROM_EMAIL, name: SENDGRID_FROM_NAME },
-      subject: 'Password Reset Request - iDiscipline',
+      subject: 'MIPSS Password Reset - Action Required',
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: rgb(39, 70, 132);">Password Reset Request</h2>
-          <p>Hi ${userData.firstname} ${userData.lastname},</p>
-          <p>We received a request to reset your password for your iDiscipline account.</p>
-          
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${resetLink}" style="background: rgb(39, 70, 132); color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
-              🔐 Reset Password
-            </a>
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>MIPSS Password Reset</title>
+        </head>
+        <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f5f5f5;">
+          <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
+            <!-- Header Image -->
+            <div style="text-align: center; padding: 0; margin: 0;">
+              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/header.png" alt="MIPSS Header" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            </div>
+            
+            <!-- Main Content -->
+            <div style="padding: 40px 30px; background-color: #ffffff;">
+              <h1 style="color: #274684; font-size: 28px; font-weight: bold; margin: 0 0 20px 0; text-align: center;">Password Reset Request</h1>
+              
+              <p style="color: #333333; font-size: 16px; line-height: 1.5; margin: 0 0 20px 0;">Hello ${userData.firstname} ${userData.lastname},</p>
+              
+              <p style="color: #333333; font-size: 16px; line-height: 1.5; margin: 0 0 20px 0;">We received a request to reset your password for your iDiscipline account. If you didn't make this request, you can safely ignore this email.</p>
+              
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${resetLink}" style="background-color: #274684; color: #ffffff; padding: 15px 40px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold; font-size: 16px;">
+                  Reset Your Password
+                </a>
+              </div>
+              
+              <p style="color: #666666; font-size: 14px; text-align: center; margin: 20px 0;">Or copy and paste this link into your browser:</p>
+              <p style="color: #666666; font-size: 12px; word-break: break-all; background-color: #f8f9fa; padding: 10px; border-radius: 4px; margin: 10px 0;">${resetLink}</p>
+              
+              <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; padding: 15px; margin: 20px 0;">
+                <p style="color: #856404; margin: 0; font-size: 14px;"><strong>Security Notice:</strong> This link will expire in 1 hour for your security. If you need more time, please request another password reset.</p>
+              </div>
+              
+              <p style="color: #333333; font-size: 14px; line-height: 1.5; margin: 20px 0;">If you have any questions or need assistance, please contact our support team.</p>
+              
+              <p style="color: #333333; font-size: 14px; line-height: 1.5; margin: 20px 0 0 0;">Best regards,<br>The iDiscipline Team</p>
+            </div>
+            
+            <!-- Footer Image -->
+            <div style="text-align: center; padding: 0; margin: 0;">
+              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/footer.png" alt="MIPSS Footer" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            </div>
           </div>
-          
-          <p>If the button doesn't work, you can copy and paste this link into your browser:</p>
-          <p style="word-break: break-all; color: #666; font-size: 0.9em;">${resetLink}</p>
-          
-          <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p style="color: #856404; margin: 0;"><strong>⚠️ IMPORTANT:</strong> This link will expire in 1 hour. If you didn't request this password reset, please ignore this email.</p>
-          </div>
-          
-          <p style="margin-top: 30px; font-size: 0.9em; color: #666;">
-            If you have any questions, please contact the school office.
-          </p>
-        </div>
+        </body>
+        </html>
       `,
       text: `Password Reset Request\n\nHi ${userData.firstname} ${userData.lastname},\n\nWe received a request to reset your password for your iDiscipline account.\n\nTo reset your password, please visit this link:\n${resetLink}\n\n⚠️ IMPORTANT: This link will expire in 1 hour. If you didn't request this password reset, please ignore this email.\n\nIf you have any questions, please contact the school office.`
     };
