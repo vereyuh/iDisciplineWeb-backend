@@ -15,6 +15,7 @@ const { Server } = require('socket.io');
 const multer = require('multer');
 const xlsx = require('xlsx');
 // Node.js 18+ has built-in fetch support
+const fetch = require('node-fetch');
 
 // Load environment variables
 dotenv.config();
@@ -47,6 +48,10 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 // Semaphore SMS setup
 const SEMAPHORE_API_KEY = process.env.SEMAPHORE_API_KEY;
 const SEMAPHORE_SENDER_NAME = process.env.SEMAPHORE_SENDER_NAME || 'iDiscipline';
+
+// Expo Push Notifications setup
+const EXPO_ACCESS_TOKEN = process.env.EXPO_ACCESS_TOKEN;
+const EXPO_URL = 'https://exp.host/--/api/v2/push/send';
 
 // Function to send SMS via Semaphore
 async function sendSMS(phoneNumber, message) {
@@ -95,6 +100,70 @@ async function sendSMS(phoneNumber, message) {
   } catch (error) {
     console.error('💥 Error in sendSMS function:', error);
     return { success: false, error: error.message };
+  }
+}
+
+// ===== PUSH NOTIFICATION FUNCTIONS =====
+
+// Function to send push notifications via Expo
+async function sendExpoPush(messages) {
+  try {
+    if (!EXPO_ACCESS_TOKEN) {
+      console.error('❌ EXPO_ACCESS_TOKEN is not set!');
+      return { success: false, error: 'Push notification service not configured. Missing Expo access token.' };
+    }
+
+    console.log('📱 Sending push notifications via Expo:', messages.length, 'messages');
+    
+    const response = await fetch(EXPO_URL, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Accept-encoding': 'gzip, deflate',
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${EXPO_ACCESS_TOKEN}`
+      },
+      body: JSON.stringify(messages)
+    });
+
+    const result = await response.json();
+    console.log('📊 Expo Push Response:', result);
+    
+    if (response.ok) {
+      return { success: true, data: result };
+    } else {
+      return { success: false, error: result.message || 'Failed to send push notifications' };
+    }
+  } catch (error) {
+    console.error('💥 Error sending push notifications:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Function to log push notification attempts
+async function logPushNotification(userId, title, body, category, type, pushTokens, expoResponse, status = 'sent') {
+  try {
+    const { error } = await supabase
+      .from('push_notification_logs')
+      .insert([{
+        user_id: userId,
+        title,
+        body,
+        category,
+        type,
+        push_tokens: pushTokens,
+        expo_response: expoResponse,
+        status,
+        sent_at: new Date().toISOString()
+      }]);
+
+    if (error) {
+      console.error('❌ Error logging push notification:', error);
+    } else {
+      console.log('✅ Push notification logged successfully');
+    }
+  } catch (error) {
+    console.error('💥 Error in logPushNotification:', error);
   }
 }
 
@@ -2489,6 +2558,521 @@ app.post('/confirm-password-reset', async (req, res) => {
     });
   }
 });
+
+// ===== PUSH NOTIFICATION ROUTES =====
+
+// Register push token for a user
+app.post('/push/register', async (req, res) => {
+  try {
+    const { userId, expoPushToken, deviceType = 'unknown', deviceId, appVersion } = req.body;
+
+    if (!userId || !expoPushToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'userId and expoPushToken are required'
+      });
+    }
+
+    console.log(`📱 Registering push token for user ${userId}`);
+
+    // Check if token already exists for this user
+    const { data: existingToken, error: checkError } = await supabase
+      .from('user_push_tokens')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('push_token', expoPushToken)
+      .single();
+
+    if (checkError && checkError.code !== 'PGRST116') {
+      throw checkError;
+    }
+
+    if (existingToken) {
+      // Update existing token
+      const { error: updateError } = await supabase
+        .from('user_push_tokens')
+        .update({
+          device_type: deviceType,
+          device_id: deviceId,
+          app_version: appVersion,
+          is_active: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existingToken.id);
+
+      if (updateError) throw updateError;
+    } else {
+      // Insert new token
+      const { error: insertError } = await supabase
+        .from('user_push_tokens')
+        .insert([{
+          user_id: userId,
+          push_token: expoPushToken,
+          device_type: deviceType,
+          device_id: deviceId,
+          app_version: appVersion,
+          is_active: true
+        }]);
+
+      if (insertError) throw insertError;
+    }
+
+    res.json({
+      success: true,
+      message: 'Push token registered successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Error registering push token:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to register push token',
+      error: error.message
+    });
+  }
+});
+
+// Deactivate push token
+app.post('/push/deactivate', async (req, res) => {
+  try {
+    const { userId, expoPushToken } = req.body;
+
+    if (!userId || !expoPushToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'userId and expoPushToken are required'
+      });
+    }
+
+    console.log(`📱 Deactivating push token for user ${userId}`);
+
+    const { error } = await supabase
+      .from('user_push_tokens')
+      .update({ is_active: false })
+      .eq('user_id', userId)
+      .eq('push_token', expoPushToken);
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      message: 'Push token deactivated successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Error deactivating push token:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to deactivate push token',
+      error: error.message
+    });
+  }
+});
+
+// Send push notification to a specific student
+app.post('/push/send-to-student', async (req, res) => {
+  try {
+    const { studentId, title, body, data = {} } = req.body;
+
+    if (!studentId || !title || !body) {
+      return res.status(400).json({
+        success: false,
+        message: 'studentId, title, and body are required'
+      });
+    }
+
+    console.log(`📱 Sending push notification to student ${studentId}`);
+
+    // Get student's push tokens
+    const { data: tokens, error: tokenError } = await supabase
+      .from('user_push_tokens')
+      .select('push_token')
+      .eq('user_id', studentId)
+      .eq('is_active', true);
+
+    if (tokenError) throw tokenError;
+
+    if (!tokens || tokens.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No active push tokens found for student',
+        sent: 0
+      });
+    }
+
+    // Prepare messages for Expo
+    const messages = tokens.map(token => ({
+      to: token.push_token,
+      title,
+      body,
+      data: { ...data, type: 'student_notification' }
+    }));
+
+    // Send via Expo
+    const expoResult = await sendExpoPush(messages);
+
+    // Log the notification
+    await logPushNotification(
+      studentId,
+      title,
+      body,
+      'student',
+      'notification',
+      tokens.map(t => t.push_token),
+      expoResult,
+      expoResult.success ? 'sent' : 'failed'
+    );
+
+    res.json({
+      success: expoResult.success,
+      message: expoResult.success ? 'Push notification sent successfully' : 'Failed to send push notification',
+      sent: expoResult.success ? tokens.length : 0,
+      error: expoResult.error
+    });
+
+  } catch (error) {
+    console.error('❌ Error sending push notification to student:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send push notification',
+      error: error.message
+    });
+  }
+});
+
+// Send push notification to all DOs
+app.post('/push/send-to-dos', async (req, res) => {
+  try {
+    const { title, body, data = {} } = req.body;
+
+    if (!title || !body) {
+      return res.status(400).json({
+        success: false,
+        message: 'title and body are required'
+      });
+    }
+
+    console.log(`📱 Sending push notification to all DOs`);
+
+    // Get all DO users' push tokens
+    const { data: tokens, error: tokenError } = await supabase
+      .from('user_push_tokens')
+      .select('push_token, user_id')
+      .eq('is_active', true)
+      .in('user_id', await getDOUserIds());
+
+    if (tokenError) throw tokenError;
+
+    if (!tokens || tokens.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No active push tokens found for DOs',
+        sent: 0
+      });
+    }
+
+    // Prepare messages for Expo
+    const messages = tokens.map(token => ({
+      to: token.push_token,
+      title,
+      body,
+      data: { ...data, type: 'do_notification' }
+    }));
+
+    // Send via Expo
+    const expoResult = await sendExpoPush(messages);
+
+    // Log the notification for each DO
+    for (const token of tokens) {
+      await logPushNotification(
+        token.user_id,
+        title,
+        body,
+        'admin',
+        'notification',
+        [token.push_token],
+        expoResult,
+        expoResult.success ? 'sent' : 'failed'
+      );
+    }
+
+    res.json({
+      success: expoResult.success,
+      message: expoResult.success ? 'Push notification sent successfully' : 'Failed to send push notification',
+      sent: expoResult.success ? tokens.length : 0,
+      error: expoResult.error
+    });
+
+  } catch (error) {
+    console.error('❌ Error sending push notification to DOs:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send push notification',
+      error: error.message
+    });
+  }
+});
+
+// Send incident report notification
+app.post('/push/incident-report-notification', async (req, res) => {
+  try {
+    const { incidentId, studentName, violationCategory, violationType } = req.body;
+
+    if (!incidentId || !studentName) {
+      return res.status(400).json({
+        success: false,
+        message: 'incidentId and studentName are required'
+      });
+    }
+
+    console.log(`📱 Sending incident report notification for incident ${incidentId}`);
+
+    const title = 'New Incident Report';
+    const body = `${studentName} • ${violationCategory || 'Violation'} – ${violationType || 'Reported'}`;
+
+    // Get all DO users' push tokens
+    const { data: tokens, error: tokenError } = await supabase
+      .from('user_push_tokens')
+      .select('push_token, user_id')
+      .eq('is_active', true)
+      .in('user_id', await getDOUserIds());
+
+    if (tokenError) throw tokenError;
+
+    if (!tokens || tokens.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No active push tokens found for DOs',
+        sent: 0
+      });
+    }
+
+    // Prepare messages for Expo
+    const messages = tokens.map(token => ({
+      to: token.push_token,
+      title,
+      body,
+      data: {
+        type: 'incident_report',
+        incidentId,
+        studentName,
+        violationCategory,
+        violationType
+      }
+    }));
+
+    // Send via Expo
+    const expoResult = await sendExpoPush(messages);
+
+    // Log the notification for each DO
+    for (const token of tokens) {
+      await logPushNotification(
+        token.user_id,
+        title,
+        body,
+        'admin',
+        'incident_report',
+        [token.push_token],
+        expoResult,
+        expoResult.success ? 'sent' : 'failed'
+      );
+    }
+
+    res.json({
+      success: expoResult.success,
+      message: expoResult.success ? 'Incident report notification sent successfully' : 'Failed to send notification',
+      sent: expoResult.success ? tokens.length : 0,
+      error: expoResult.error
+    });
+
+  } catch (error) {
+    console.error('❌ Error sending incident report notification:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send incident report notification',
+      error: error.message
+    });
+  }
+});
+
+// Send appointment notification
+app.post('/push/appointment-notification', async (req, res) => {
+  try {
+    const { appointmentId, studentName, appointmentType, appointmentDate, appointmentTime } = req.body;
+
+    if (!appointmentId || !studentName) {
+      return res.status(400).json({
+        success: false,
+        message: 'appointmentId and studentName are required'
+      });
+    }
+
+    console.log(`📱 Sending appointment notification for appointment ${appointmentId}`);
+
+    const title = 'New Appointment';
+    const body = `${studentName} • ${appointmentType || 'PTC'} – ${appointmentDate || 'Scheduled'}`;
+
+    // Get all DO users' push tokens
+    const { data: tokens, error: tokenError } = await supabase
+      .from('user_push_tokens')
+      .select('push_token, user_id')
+      .eq('is_active', true)
+      .in('user_id', await getDOUserIds());
+
+    if (tokenError) throw tokenError;
+
+    if (!tokens || tokens.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No active push tokens found for DOs',
+        sent: 0
+      });
+    }
+
+    // Prepare messages for Expo
+    const messages = tokens.map(token => ({
+      to: token.push_token,
+      title,
+      body,
+      data: {
+        type: 'appointment',
+        appointmentId,
+        studentName,
+        appointmentType,
+        appointmentDate,
+        appointmentTime
+      }
+    }));
+
+    // Send via Expo
+    const expoResult = await sendExpoPush(messages);
+
+    // Log the notification for each DO
+    for (const token of tokens) {
+      await logPushNotification(
+        token.user_id,
+        title,
+        body,
+        'admin',
+        'appointment',
+        [token.push_token],
+        expoResult,
+        expoResult.success ? 'sent' : 'failed'
+      );
+    }
+
+    res.json({
+      success: expoResult.success,
+      message: expoResult.success ? 'Appointment notification sent successfully' : 'Failed to send notification',
+      sent: expoResult.success ? tokens.length : 0,
+      error: expoResult.error
+    });
+
+  } catch (error) {
+    console.error('❌ Error sending appointment notification:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send appointment notification',
+      error: error.message
+    });
+  }
+});
+
+// Send chat message notification
+app.post('/push/chat-message-notification', async (req, res) => {
+  try {
+    const { violationId, senderName, message, recipientId } = req.body;
+
+    if (!violationId || !senderName || !message || !recipientId) {
+      return res.status(400).json({
+        success: false,
+        message: 'violationId, senderName, message, and recipientId are required'
+      });
+    }
+
+    console.log(`📱 Sending chat message notification for violation ${violationId}`);
+
+    const title = 'New Message';
+    const body = `${senderName}: ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}`;
+
+    // Get recipient's push tokens
+    const { data: tokens, error: tokenError } = await supabase
+      .from('user_push_tokens')
+      .select('push_token')
+      .eq('user_id', recipientId)
+      .eq('is_active', true);
+
+    if (tokenError) throw tokenError;
+
+    if (!tokens || tokens.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No active push tokens found for recipient',
+        sent: 0
+      });
+    }
+
+    // Prepare messages for Expo
+    const messages = tokens.map(token => ({
+      to: token.push_token,
+      title,
+      body,
+      data: {
+        type: 'chat_message',
+        violationId,
+        senderName,
+        message
+      }
+    }));
+
+    // Send via Expo
+    const expoResult = await sendExpoPush(messages);
+
+    // Log the notification
+    await logPushNotification(
+      recipientId,
+      title,
+      body,
+      'chat',
+      'message',
+      tokens.map(t => t.push_token),
+      expoResult,
+      expoResult.success ? 'sent' : 'failed'
+    );
+
+    res.json({
+      success: expoResult.success,
+      message: expoResult.success ? 'Chat message notification sent successfully' : 'Failed to send notification',
+      sent: expoResult.success ? tokens.length : 0,
+      error: expoResult.error
+    });
+
+  } catch (error) {
+    console.error('❌ Error sending chat message notification:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send chat message notification',
+      error: error.message
+    });
+  }
+});
+
+// Helper function to get DO user IDs
+async function getDOUserIds() {
+  try {
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('id')
+      .eq('status', 'active')
+      .in('roles', ['admin', 'disciplinary_officer', 'super_admin']);
+
+    if (error) throw error;
+    return users.map(user => user.id);
+  } catch (error) {
+    console.error('❌ Error getting DO user IDs:', error);
+    return [];
+  }
+}
 
 // 🚀 Run the server
 const PORT = process.env.PORT || 5000;
