@@ -15,6 +15,7 @@ const { Server } = require('socket.io');
 const multer = require('multer');
 const xlsx = require('xlsx');
 // Node.js 18+ has built-in fetch support
+const fetch = require('node-fetch');
 
 // Load environment variables
 dotenv.config();
@@ -47,6 +48,14 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 // Semaphore SMS setup
 const SEMAPHORE_API_KEY = process.env.SEMAPHORE_API_KEY;
 const SEMAPHORE_SENDER_NAME = process.env.SEMAPHORE_SENDER_NAME || 'iDiscipline';
+
+// Expo Push Notifications setup
+const EXPO_ACCESS_TOKEN = process.env.EXPO_ACCESS_TOKEN;
+const EXPO_URL = 'https://exp.host/--/api/v2/push/send';
+
+// SendGrid sender defaults (support both FROM_NAME and SENDER_NAME)
+const SENDGRID_FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL || 'balduezaraven@gmail.com';
+const SENDGRID_FROM_NAME = process.env.SENDGRID_FROM_NAME || process.env.SENDGRID_SENDER_NAME || 'iDiscipline';
 
 // Function to send SMS via Semaphore
 async function sendSMS(phoneNumber, message) {
@@ -93,14 +102,76 @@ async function sendSMS(phoneNumber, message) {
       return { success: false, error: result.message || 'Failed to send SMS' };
     }
   } catch (error) {
-    console.error('💥 Error in sendSMS function:', error);
+    console.error('💥 Error sending SMS:', error);
     return { success: false, error: error.message };
   }
 }
 
-// SendGrid sender defaults (support both FROM_NAME and SENDER_NAME)
-const SENDGRID_FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL || 'balduezaraven@gmail.com';
-const SENDGRID_FROM_NAME = process.env.SENDGRID_FROM_NAME || process.env.SENDGRID_SENDER_NAME || 'iDiscipline';
+// Function to send Expo push notifications
+async function sendExpoPush(messages) {
+  try {
+    if (!EXPO_ACCESS_TOKEN) {
+      console.error('❌ EXPO_ACCESS_TOKEN is not set!');
+      return { success: false, error: 'Push notification service not configured. Missing Expo access token.' };
+    }
+
+    console.log('📱 Sending push notification to Expo:', messages.length, 'messages');
+    
+    const response = await fetch(EXPO_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${EXPO_ACCESS_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(messages)
+    });
+
+    const text = await response.text();
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = { raw: text };
+    }
+
+    if (!response.ok) {
+      throw new Error(`Expo push failed: ${text}`);
+    }
+
+    console.log('✅ Push notification sent successfully:', json);
+    return { success: true, data: json };
+  } catch (error) {
+    console.error('💥 Error sending push notification:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Function to log push notification attempts
+async function logPushNotification(userId, title, body, category, type, pushTokens, expoResponse, status = 'sent') {
+  try {
+    const { error } = await supabase
+      .from('push_notification_logs')
+      .insert([{
+        user_id: userId,
+        title,
+        body,
+        category,
+        type,
+        push_tokens: pushTokens,
+        expo_response: expoResponse,
+        status,
+        sent_at: new Date().toISOString()
+      }]);
+
+    if (error) {
+      console.error('❌ Error logging push notification:', error);
+    } else {
+      console.log('✅ Push notification logged successfully');
+    }
+  } catch (error) {
+    console.error('💥 Error in logPushNotification:', error);
+  }
+}
 
 // Anthropic setup
 const anthropic = new Anthropic({
@@ -139,6 +210,16 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY ? 'SET' : 'NOT SET',
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
 const upload = multer({ dest: 'uploads/' });
 
 // 1. Send Verification Email Route - UPDATED
@@ -160,38 +241,61 @@ app.post('/send-verification-email', async (req, res) => {
     const msg = {
       to: email,
       from: { email: SENDGRID_FROM_EMAIL, name: SENDGRID_FROM_NAME },
-      subject: 'Welcome to iDiscipline - Verify Your Email (IMPORTANT)',
+      subject: 'MIPSS Student Account Verification - Action Required',
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: rgb(39, 70, 132);">Welcome to iDiscipline!</h2>
-          <p>Hi ${name},</p>
-          <p>Your account has been created successfully. Here are your login credentials:</p>
-          <div style="background: #f5f7fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p><strong>Email:</strong> ${email}</p>
-            <p><strong>Password:</strong> ${password}</p>
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>MIPSS Student Account Verification</title>
+        </head>
+        <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f5f5f5;">
+          <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
+            <!-- Header Image -->
+            <div style="text-align: center; padding: 0; margin: 0;">
+              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/header.png" alt="MIPSS Header" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            </div>
+            
+            <!-- Main Content -->
+            <div style="padding: 40px 30px; background-color: #ffffff;">
+              <h1 style="color: #274684; font-size: 28px; font-weight: bold; margin: 0 0 20px 0; text-align: center;">Student Account Verification</h1>
+              
+              <p style="color: #333333; font-size: 16px; line-height: 1.5; margin: 0 0 20px 0;">Hello ${name},</p>
+              
+              <p style="color: #333333; font-size: 16px; line-height: 1.5; margin: 0 0 20px 0;">We received a request to verify your student account for the iDiscipline system. If you didn't make this request, you can safely ignore this email.</p>
+              
+              <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                <h3 style="color: #274684; font-size: 18px; margin: 0 0 15px 0;">Your Login Credentials:</h3>
+                <p style="color: #333333; font-size: 14px; margin: 5px 0;"><strong>Email:</strong> ${email}</p>
+                <p style="color: #333333; font-size: 14px; margin: 5px 0;"><strong>Password:</strong> ${password}</p>
+              </div>
+              
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${verificationLink}" style="background-color: #274684; color: #ffffff; padding: 15px 40px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold; font-size: 16px;">
+                  Verify Your Account
+                </a>
+              </div>
+              
+              <p style="color: #666666; font-size: 14px; text-align: center; margin: 20px 0;">Or copy and paste this link into your browser:</p>
+              <p style="color: #666666; font-size: 12px; word-break: break-all; background-color: #f8f9fa; padding: 10px; border-radius: 4px; margin: 10px 0;">${verificationLink}</p>
+              
+              <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; padding: 15px; margin: 20px 0;">
+                <p style="color: #856404; margin: 0; font-size: 14px;"><strong>Security Notice:</strong> This link will expire in 24 hours for your security. If you need more time, please request another verification link.</p>
+              </div>
+              
+              <p style="color: #333333; font-size: 14px; line-height: 1.5; margin: 20px 0;">If you have any questions or need assistance, please contact our support team.</p>
+              
+              <p style="color: #333333; font-size: 14px; line-height: 1.5; margin: 20px 0 0 0;">Best regards,<br>The iDiscipline Team</p>
+            </div>
+            
+            <!-- Footer Image -->
+            <div style="text-align: center; padding: 0; margin: 0;">
+              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/footer.png" alt="MIPSS Footer" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            </div>
           </div>
-          
-          <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p style="color: #856404; margin: 0;"><strong>⚠️ IMPORTANT:</strong> You may receive another email from Supabase. Please use THIS verification link below instead.</p>
-          </div>
-          
-          <p>To complete your registration, please click the verification link below:</p>
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${verificationLink}" style="background: rgb(39, 70, 132); color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
-              ✅ Verify Email Address
-            </a>
-          </div>
-          <p>If the button doesn't work, you can copy and paste this link into your browser:</p>
-          <p style="word-break: break-all; color: #666; font-size: 0.9em;">${verificationLink}</p>
-          
-          <div style="background: #e8f5e8; border: 1px solid #c3e6c3; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p style="color: #155724; margin: 0;"><strong>💡 Tip:</strong> After clicking the verification link above, you can ignore any other verification emails you receive.</p>
-          </div>
-          
-          <p style="margin-top: 30px; font-size: 0.9em; color: #666;">
-            This link will expire in 24 hours. If you didn't create this account, please ignore this email.
-          </p>
-        </div>
+        </body>
+        </html>
       `,
       text: `Welcome to iDiscipline!\n\nHi ${name},\n\nYour account has been created successfully. Here are your login credentials:\n\nEmail: ${email}\nPassword: ${password}\n\n⚠️ IMPORTANT: You may receive another email from Supabase. Please use THIS verification link instead.\n\nTo complete your registration, please visit this verification link:\n${verificationLink}\n\n💡 Tip: After clicking the verification link above, you can ignore any other verification emails you receive.\n\nThis link will expire in 24 hours. If you didn't create this account, please ignore this email.`
     };
@@ -673,34 +777,61 @@ app.post('/resend-verification-link', async (req, res) => {
     const msg = {
       to: email,
       from: { email: SENDGRID_FROM_EMAIL, name: SENDGRID_FROM_NAME },
-      subject: 'New Verification Link - iDiscipline (IMPORTANT)',
+      subject: 'MIPSS New Verification Link - Action Required',
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: rgb(39, 70, 132);">New Verification Link</h2>
-          <p>Hi ${name},</p>
-          <p>Your previous verification link has expired. Here are your new login credentials:</p>
-          <div style="background: #f5f7fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p><strong>Email:</strong> ${email}</p>
-            <p><strong>New Password:</strong> ${newPassword}</p>
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>MIPSS New Verification Link</title>
+        </head>
+        <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f5f5f5;">
+          <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
+            <!-- Header Image -->
+            <div style="text-align: center; padding: 0; margin: 0;">
+              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/header.png" alt="MIPSS Header" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            </div>
+            
+            <!-- Main Content -->
+            <div style="padding: 40px 30px; background-color: #ffffff;">
+              <h1 style="color: #274684; font-size: 28px; font-weight: bold; margin: 0 0 20px 0; text-align: center;">New Verification Link</h1>
+              
+              <p style="color: #333333; font-size: 16px; line-height: 1.5; margin: 0 0 20px 0;">Hello ${name},</p>
+              
+              <p style="color: #333333; font-size: 16px; line-height: 1.5; margin: 0 0 20px 0;">Your previous verification link has expired. Here are your new login credentials:</p>
+              
+              <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                <h3 style="color: #274684; font-size: 18px; margin: 0 0 15px 0;">Your Updated Login Credentials:</h3>
+                <p style="color: #333333; font-size: 14px; margin: 5px 0;"><strong>Email:</strong> ${email}</p>
+                <p style="color: #333333; font-size: 14px; margin: 5px 0;"><strong>New Password:</strong> ${newPassword}</p>
+              </div>
+              
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${verificationLink}" style="background-color: #274684; color: #ffffff; padding: 15px 40px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold; font-size: 16px;">
+                  Verify Your Account
+                </a>
+              </div>
+              
+              <p style="color: #666666; font-size: 14px; text-align: center; margin: 20px 0;">Or copy and paste this link into your browser:</p>
+              <p style="color: #666666; font-size: 12px; word-break: break-all; background-color: #f8f9fa; padding: 10px; border-radius: 4px; margin: 10px 0;">${verificationLink}</p>
+              
+              <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; padding: 15px; margin: 20px 0;">
+                <p style="color: #856404; margin: 0; font-size: 14px;"><strong>Security Notice:</strong> This link will expire in 24 hours for your security. If you need more time, please request another verification link.</p>
+              </div>
+              
+              <p style="color: #333333; font-size: 14px; line-height: 1.5; margin: 20px 0;">If you have any questions or need assistance, please contact our support team.</p>
+              
+              <p style="color: #333333; font-size: 14px; line-height: 1.5; margin: 20px 0 0 0;">Best regards,<br>The iDiscipline Team</p>
+            </div>
+            
+            <!-- Footer Image -->
+            <div style="text-align: center; padding: 0; margin: 0;">
+              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/footer.png" alt="MIPSS Footer" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            </div>
           </div>
-          
-          <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p style="color: #856404; margin: 0;"><strong>⚠️ IMPORTANT:</strong> This link will expire in 24 hours.</p>
-          </div>
-          
-          <p>To complete your registration, please click the verification link below:</p>
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${verificationLink}" style="background: rgb(39, 70, 132); color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
-              ✅ Verify Email Address
-            </a>
-          </div>
-          <p>If the button doesn't work, you can copy and paste this link into your browser:</p>
-          <p style="word-break: break-all; color: #666; font-size: 0.9em;">${verificationLink}</p>
-          
-          <p style="margin-top: 30px; font-size: 0.9em; color: #666;">
-            This link will expire in 24 hours. If you didn't request this, please contact support.
-          </p>
-        </div>
+        </body>
+        </html>
       `,
       text: `New Verification Link\n\nHi ${name},\n\nYour previous verification link has expired. Here are your new login credentials:\n\nEmail: ${email}\nNew Password: ${newPassword}\n\n⚠️ IMPORTANT: This link will expire in 24 hours.\n\nTo complete your registration, please visit this verification link:\n${verificationLink}\n\nThis link will expire in 24 hours. If you didn't request this, please contact support.`
     };
@@ -1645,39 +1776,62 @@ app.post('/send-admin-verification-email', async (req, res) => {
     const msg = {
       to: email,
       from: { email: SENDGRID_FROM_EMAIL, name: SENDGRID_FROM_NAME },
-      subject: 'Welcome to iDiscipline - Admin Account Verification (IMPORTANT)',
+      subject: 'MIPSS Admin Account Verification - Action Required',
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: rgb(39, 70, 132);">Welcome to iDiscipline Admin Portal!</h2>
-          <p>Hi ${name},</p>
-          <p>Your admin account has been created successfully. Here are your login credentials:</p>
-          <div style="background: #f5f7fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p><strong>Email:</strong> ${email}</p>
-            <p><strong>Password:</strong> ${password}</p>
-            <p><strong>Role:</strong> ${role || 'Admin'}</p>
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>MIPSS Admin Account Verification</title>
+        </head>
+        <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f5f5f5;">
+          <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
+            <!-- Header Image -->
+            <div style="text-align: center; padding: 0; margin: 0;">
+              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/header.png" alt="MIPSS Header" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            </div>
+            
+            <!-- Main Content -->
+            <div style="padding: 40px 30px; background-color: #ffffff;">
+              <h1 style="color: #274684; font-size: 28px; font-weight: bold; margin: 0 0 20px 0; text-align: center;">Admin Account Verification</h1>
+              
+              <p style="color: #333333; font-size: 16px; line-height: 1.5; margin: 0 0 20px 0;">Hello ${name},</p>
+              
+              <p style="color: #333333; font-size: 16px; line-height: 1.5; margin: 0 0 20px 0;">We received a request to verify your admin account for the iDiscipline system. If you didn't make this request, you can safely ignore this email.</p>
+              
+              <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                <h3 style="color: #274684; font-size: 18px; margin: 0 0 15px 0;">Your Login Credentials:</h3>
+                <p style="color: #333333; font-size: 14px; margin: 5px 0;"><strong>Email:</strong> ${email}</p>
+                <p style="color: #333333; font-size: 14px; margin: 5px 0;"><strong>Password:</strong> ${password}</p>
+                <p style="color: #333333; font-size: 14px; margin: 5px 0;"><strong>Role:</strong> ${role || 'Admin'}</p>
+              </div>
+              
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${verificationLink}" style="background-color: #274684; color: #ffffff; padding: 15px 40px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold; font-size: 16px;">
+                  Verify Admin Account
+                </a>
+              </div>
+              
+              <p style="color: #666666; font-size: 14px; text-align: center; margin: 20px 0;">Or copy and paste this link into your browser:</p>
+              <p style="color: #666666; font-size: 12px; word-break: break-all; background-color: #f8f9fa; padding: 10px; border-radius: 4px; margin: 10px 0;">${verificationLink}</p>
+              
+              <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; padding: 15px; margin: 20px 0;">
+                <p style="color: #856404; margin: 0; font-size: 14px;"><strong>Security Notice:</strong> This link will expire in 24 hours for your security. If you need more time, please request another verification link.</p>
+              </div>
+              
+              <p style="color: #333333; font-size: 14px; line-height: 1.5; margin: 20px 0;">If you have any questions or need assistance, please contact our support team.</p>
+              
+              <p style="color: #333333; font-size: 14px; line-height: 1.5; margin: 20px 0 0 0;">Best regards,<br>The iDiscipline Team</p>
+            </div>
+            
+            <!-- Footer Image -->
+            <div style="text-align: center; padding: 0; margin: 0;">
+              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/footer.png" alt="MIPSS Footer" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            </div>
           </div>
-          
-          <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p style="color: #856404; margin: 0;"><strong>⚠️ IMPORTANT:</strong> You may receive another email from Supabase. Please use THIS verification link below instead.</p>
-          </div>
-          
-          <p>To complete your admin account setup, please click the verification link below:</p>
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${verificationLink}" style="background: rgb(39, 70, 132); color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
-              ✅ Verify Admin Account
-            </a>
-          </div>
-          <p>If the button doesn't work, you can copy and paste this link into your browser:</p>
-          <p style="word-break: break-all; color: #666; font-size: 0.9em;">${verificationLink}</p>
-          
-          <div style="background: #e8f5e8; border: 1px solid #c3e6c3; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p style="color: #155724; margin: 0;"><strong>💡 Tip:</strong> After clicking the verification link above, you can ignore any other verification emails you receive.</p>
-          </div>
-          
-          <p style="margin-top: 30px; font-size: 0.9em; color: #666;">
-            This link will expire in 24 hours. If you didn't create this account, please ignore this email.
-          </p>
-        </div>
+        </body>
+        </html>
       `,
       text: `Welcome to iDiscipline Admin Portal!\n\nHi ${name},\n\nYour admin account has been created successfully. Here are your login credentials:\n\nEmail: ${email}\nPassword: ${password}\nRole: ${role || 'Admin'}\n\n⚠️ IMPORTANT: You may receive another email from Supabase. Please use THIS verification link instead.\n\nTo complete your admin account setup, please visit this verification link:\n${verificationLink}\n\n💡 Tip: After clicking the verification link above, you can ignore any other verification emails you receive.\n\nThis link will expire in 24 hours. If you didn't create this account, please ignore this email.`
     };
@@ -1851,6 +2005,479 @@ app.post('/send-parent-sms', async (req, res) => {
   }
 });
 
+// ===== PUSH NOTIFICATION ROUTES =====
+
+// 1. Register push token route
+app.post('/push/register', async (req, res) => {
+  const { userId, expoPushToken, deviceType, deviceId, appVersion } = req.body;
+  
+  if (!userId || !expoPushToken) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Missing required fields: userId, expoPushToken' 
+    });
+  }
+
+  try {
+    console.log(`📱 Registering push token for user: ${userId}`);
+    
+    // Upsert push token
+    const { error } = await supabase
+      .from('user_push_tokens')
+      .upsert([{
+        user_id: userId,
+        push_token: expoPushToken,
+        device_type: deviceType || 'android',
+        is_active: true,
+        device_id: deviceId,
+        app_version: appVersion || '1.0.0',
+        updated_at: new Date().toISOString()
+      }], {
+        onConflict: 'user_id,push_token'
+      });
+
+    if (error) {
+      throw error;
+    }
+
+    console.log(`✅ Push token registered successfully for user: ${userId}`);
+    res.status(200).json({ 
+      success: true, 
+      message: 'Push token registered successfully' 
+    });
+    
+  } catch (error) {
+    console.error('💥 Error registering push token:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to register push token', 
+      error: error.message 
+    });
+  }
+});
+
+// 2. Deactivate push token route (on logout)
+app.post('/push/deactivate', async (req, res) => {
+  const { userId, pushToken } = req.body;
+  
+  if (!userId || !pushToken) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Missing required fields: userId, pushToken' 
+    });
+  }
+
+  try {
+    console.log(`📱 Deactivating push token for user: ${userId}`);
+    
+    const { error } = await supabase
+      .from('user_push_tokens')
+      .update({ 
+        is_active: false, 
+        updated_at: new Date().toISOString() 
+      })
+      .eq('user_id', userId)
+      .eq('push_token', pushToken);
+
+    if (error) {
+      throw error;
+    }
+
+    console.log(`✅ Push token deactivated successfully for user: ${userId}`);
+    res.status(200).json({ 
+      success: true, 
+      message: 'Push token deactivated successfully' 
+    });
+    
+  } catch (error) {
+    console.error('💥 Error deactivating push token:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to deactivate push token', 
+      error: error.message 
+    });
+  }
+});
+
+// 3. Send push notification to a specific student
+app.post('/push/send-to-student', async (req, res) => {
+  const { studentId, title, body, data } = req.body;
+  
+  if (!studentId || !title || !body) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Missing required fields: studentId, title, body' 
+    });
+  }
+
+  try {
+    console.log(`📱 Sending push notification to student: ${studentId}`);
+    
+    // Get active push tokens for the student
+    const { data: tokens, error: tokenError } = await supabase
+      .from('user_push_tokens')
+      .select('push_token')
+      .eq('user_id', studentId)
+      .eq('is_active', true);
+
+    if (tokenError) {
+      throw tokenError;
+    }
+
+    if (!tokens || tokens.length === 0) {
+      console.log(`⚠️ No active push tokens found for student: ${studentId}`);
+      return res.json({ 
+        success: true, 
+        sent: 0, 
+        message: 'No active push tokens found for this student' 
+      });
+    }
+
+    // Prepare messages for Expo
+    const messages = tokens.map(token => ({
+      to: token.push_token,
+      title,
+      body,
+      data: data || {}
+    }));
+
+    // Send to Expo
+    const expoResult = await sendExpoPush(messages);
+    
+    if (!expoResult.success) {
+      throw new Error(expoResult.error);
+    }
+
+    // Log the notification
+    await logPushNotification(
+      studentId,
+      title,
+      body,
+      'student',
+      'student',
+      tokens.map(t => t.push_token),
+      expoResult.data
+    );
+
+    console.log(`✅ Push notification sent to student: ${studentId} (${tokens.length} tokens)`);
+    res.json({ 
+      success: true, 
+      count: tokens.length,
+      message: `Push notification sent to ${tokens.length} device(s)` 
+    });
+    
+  } catch (error) {
+    console.error('💥 Error sending push notification to student:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to send push notification', 
+      error: error.message 
+    });
+  }
+});
+
+// 4. Send push notification to all DOs (Disciplinary Officers)
+app.post('/push/send-to-dos', async (req, res) => {
+  const { title, body, data } = req.body;
+  
+  if (!title || !body) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Missing required fields: title, body' 
+    });
+  }
+
+  try {
+    console.log('📱 Sending push notification to all DOs');
+    
+    // Get all active DOs
+    const { data: doUsers, error: doError } = await supabase
+      .from('users')
+      .select('id')
+      .in('role', ['admin', 'super_admin'])
+      .eq('status', 'active');
+
+    if (doError) {
+      throw doError;
+    }
+
+    if (!doUsers || doUsers.length === 0) {
+      console.log('⚠️ No active DOs found');
+      return res.json({ 
+        success: true, 
+        sent: 0, 
+        message: 'No active DOs found' 
+      });
+    }
+
+    const doUserIds = doUsers.map(u => u.id);
+
+    // Get push tokens for all DOs
+    const { data: tokens, error: tokenError } = await supabase
+      .from('user_push_tokens')
+      .select('user_id, push_token')
+      .eq('is_active', true)
+      .in('user_id', doUserIds);
+
+    if (tokenError) {
+      throw tokenError;
+    }
+
+    if (!tokens || tokens.length === 0) {
+      console.log('⚠️ No active push tokens found for DOs');
+      return res.json({ 
+        success: true, 
+        sent: 0, 
+        message: 'No active push tokens found for DOs' 
+      });
+    }
+
+    // Prepare messages for Expo
+    const messages = tokens.map(token => ({
+      to: token.push_token,
+      title,
+      body,
+      data: data || {}
+    }));
+
+    // Send to Expo in chunks of 100
+    let totalSent = 0;
+    for (let i = 0; i < messages.length; i += 100) {
+      const chunk = messages.slice(i, i + 100);
+      const expoResult = await sendExpoPush(chunk);
+      
+      if (expoResult.success) {
+        totalSent += chunk.length;
+      } else {
+        console.error(`❌ Failed to send chunk ${i}-${i + chunk.length}:`, expoResult.error);
+      }
+    }
+
+    // Log the notification for each DO
+    for (const token of tokens) {
+      await logPushNotification(
+        token.user_id,
+        title,
+        body,
+        'admin',
+        'admin',
+        [token.push_token],
+        { sent: totalSent }
+      );
+    }
+
+    console.log(`✅ Push notification sent to DOs: ${totalSent} messages`);
+    res.json({ 
+      success: true, 
+      count: totalSent,
+      message: `Push notification sent to ${totalSent} device(s)` 
+    });
+    
+  } catch (error) {
+    console.error('💥 Error sending push notification to DOs:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to send push notification', 
+      error: error.message 
+    });
+  }
+});
+
+// 5. Send push notification when new incident report is filed
+app.post('/push/incident-report-notification', async (req, res) => {
+  const { incidentId, studentName, violationCategory, violationType } = req.body;
+  
+  if (!incidentId || !studentName || !violationCategory || !violationType) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Missing required fields: incidentId, studentName, violationCategory, violationType' 
+    });
+  }
+
+  try {
+    console.log(`📱 Sending incident report notification for incident: ${incidentId}`);
+    
+    const title = 'New Incident Report';
+    const body = `${studentName} • ${violationCategory} – ${violationType}`;
+    const data = { 
+      type: 'incident_report', 
+      incidentId 
+    };
+
+    // Use the existing send-to-dos route
+    const response = await fetch(`${BACKEND_URL}/push/send-to-dos`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ title, body, data })
+    });
+
+    const result = await response.json();
+    
+    if (result.success) {
+      console.log(`✅ Incident report notification sent: ${result.count} messages`);
+      res.json({ 
+        success: true, 
+        count: result.count,
+        message: `Incident report notification sent to ${result.count} device(s)` 
+      });
+    } else {
+      throw new Error(result.message);
+    }
+    
+  } catch (error) {
+    console.error('💥 Error sending incident report notification:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to send incident report notification', 
+      error: error.message 
+    });
+  }
+});
+
+// 6. Send push notification when appointment is created
+app.post('/push/appointment-notification', async (req, res) => {
+  const { appointmentId, studentId, doName, type, date, time, caseNo } = req.body;
+  
+  if (!appointmentId || !studentId || !doName || !type || !date || !time) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Missing required fields: appointmentId, studentId, doName, type, date, time' 
+    });
+  }
+
+  try {
+    console.log(`📱 Sending appointment notification for appointment: ${appointmentId}`);
+    
+    const title = 'Appointment Scheduled';
+    const body = `${doName}: ${type} on ${date} ${time}`;
+    const data = { 
+      type: 'appointment', 
+      appointmentId, 
+      case_no: caseNo 
+    };
+
+    // Use the existing send-to-student route
+    const response = await fetch(`${BACKEND_URL}/push/send-to-student`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ studentId, title, body, data })
+    });
+
+    const result = await response.json();
+    
+    if (result.success) {
+      console.log(`✅ Appointment notification sent: ${result.count} messages`);
+      res.json({ 
+        success: true, 
+        count: result.count,
+        message: `Appointment notification sent to ${result.count} device(s)` 
+      });
+    } else {
+      throw new Error(result.message);
+    }
+    
+  } catch (error) {
+    console.error('💥 Error sending appointment notification:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to send appointment notification', 
+      error: error.message 
+    });
+  }
+});
+
+// 7. Send chat message notification
+app.post('/push/chat-message-notification', async (req, res) => {
+  const { chatId, senderName, message, recipientId, recipientType, studentName } = req.body;
+  
+  if (!chatId || !senderName || !message || !recipientId || !recipientType) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Missing required fields: chatId, senderName, message, recipientId, recipientType' 
+    });
+  }
+
+  try {
+    console.log(`📱 Sending chat message notification for chat: ${chatId}`);
+    
+    let title, body, data;
+    
+    if (recipientType === 'student') {
+      // DO → student
+      title = 'New message';
+      body = message.length > 50 ? message.substring(0, 50) + '...' : message;
+      data = { type: 'message', chatId };
+      
+      // Send to student
+      const response = await fetch(`${BACKEND_URL}/push/send-to-student`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          studentId: recipientId, 
+          title, 
+          body, 
+          data 
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log(`✅ Chat message notification sent to student: ${result.count} messages`);
+        res.json({ 
+          success: true, 
+          count: result.count,
+          message: `Chat message notification sent to ${result.count} device(s)` 
+        });
+      } else {
+        throw new Error(result.message);
+      }
+      
+    } else {
+      // Student → DOs
+      title = 'Student message';
+      body = `${studentName || 'Student'}: ${message.length > 50 ? message.substring(0, 50) + '...' : message}`;
+      data = { type: 'message', chatId };
+      
+      // Send to DOs
+      const response = await fetch(`${BACKEND_URL}/push/send-to-dos`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ title, body, data })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log(`✅ Chat message notification sent to DOs: ${result.count} messages`);
+        res.json({ 
+          success: true, 
+          count: result.count,
+          message: `Chat message notification sent to ${result.count} device(s)` 
+        });
+      } else {
+        throw new Error(result.message);
+      }
+    }
+    
+  } catch (error) {
+    console.error('💥 Error sending chat message notification:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to send chat message notification', 
+      error: error.message 
+    });
+  }
+});
+
 // Add new endpoint for personality test analysis
 app.post('/api/analyze-personality', async (req, res) => {
   const { answers, violations } = req.body;
@@ -2014,6 +2641,16 @@ app.post('/api/report-suggestion', async (req, res) => {
     // Load handbook text (assuming PDF is in public/docs/studenthandbook.pdf)
     const path = require('path');
     const pdfPath = path.join(__dirname, '../public/docs/studenthandbook.pdf');
+    
+    // Check if PDF file exists
+    if (!fs.existsSync(pdfPath)) {
+      console.error('Student handbook PDF not found at:', pdfPath);
+      return res.status(500).json({ 
+        error: 'Student handbook not found',
+        details: 'PDF file is missing from server'
+      });
+    }
+    
     const dataBuffer = fs.readFileSync(pdfPath);
     const data = await pdfParse(dataBuffer);
     const handbookText = data.text;
@@ -2077,13 +2714,33 @@ Constraints:
     res.json({ suggestion });
   } catch (err) {
     console.error('AI suggestion error:', err);
-    if (err.type === 'rate_limit_error') {
+    console.error('Error details:', {
+      message: err.message,
+      type: err.type,
+      stack: err.stack,
+      anthropicApiKey: process.env.ANTHROPIC_API_KEY ? 'SET' : 'NOT SET'
+    });
+    
+    if (err.message && err.message.includes('Rate limit exceeded')) {
       res.status(429).json({ 
         error: 'Rate limit exceeded. Please try again in a few minutes.',
         retryAfter: '1 minute'
       });
+    } else if (err.type === 'rate_limit_error') {
+      res.status(429).json({ 
+        error: 'Rate limit exceeded. Please try again in a few minutes.',
+        retryAfter: '1 minute'
+      });
+    } else if (!process.env.ANTHROPIC_API_KEY) {
+      res.status(500).json({ 
+        error: 'AI service not configured. Missing API key.',
+        details: 'ANTHROPIC_API_KEY environment variable is not set'
+      });
     } else {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ 
+        error: err.message || 'Internal server error',
+        details: 'Check server logs for more information'
+      });
     }
   }
 });
@@ -2331,30 +2988,55 @@ app.post('/request-password-reset', async (req, res) => {
     const msg = {
       to: email,
       from: { email: SENDGRID_FROM_EMAIL, name: SENDGRID_FROM_NAME },
-      subject: 'Password Reset Request - iDiscipline',
+      subject: 'MIPSS Password Reset - Action Required',
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: rgb(39, 70, 132);">Password Reset Request</h2>
-          <p>Hi ${userData.firstname} ${userData.lastname},</p>
-          <p>We received a request to reset your password for your iDiscipline account.</p>
-          
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${resetLink}" style="background: rgb(39, 70, 132); color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
-              🔐 Reset Password
-            </a>
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>MIPSS Password Reset</title>
+        </head>
+        <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f5f5f5;">
+          <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
+            <!-- Header Image -->
+            <div style="text-align: center; padding: 0; margin: 0;">
+              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/header.png" alt="MIPSS Header" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            </div>
+            
+            <!-- Main Content -->
+            <div style="padding: 40px 30px; background-color: #ffffff;">
+              <h1 style="color: #274684; font-size: 28px; font-weight: bold; margin: 0 0 20px 0; text-align: center;">Password Reset Request</h1>
+              
+              <p style="color: #333333; font-size: 16px; line-height: 1.5; margin: 0 0 20px 0;">Hello ${userData.firstname} ${userData.lastname},</p>
+              
+              <p style="color: #333333; font-size: 16px; line-height: 1.5; margin: 0 0 20px 0;">We received a request to reset your password for your iDiscipline account. If you didn't make this request, you can safely ignore this email.</p>
+              
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${resetLink}" style="background-color: #274684; color: #ffffff; padding: 15px 40px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold; font-size: 16px;">
+                  Reset Your Password
+                </a>
+              </div>
+              
+              <p style="color: #666666; font-size: 14px; text-align: center; margin: 20px 0;">Or copy and paste this link into your browser:</p>
+              <p style="color: #666666; font-size: 12px; word-break: break-all; background-color: #f8f9fa; padding: 10px; border-radius: 4px; margin: 10px 0;">${resetLink}</p>
+              
+              <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; padding: 15px; margin: 20px 0;">
+                <p style="color: #856404; margin: 0; font-size: 14px;"><strong>Security Notice:</strong> This link will expire in 1 hour for your security. If you need more time, please request another password reset.</p>
+              </div>
+              
+              <p style="color: #333333; font-size: 14px; line-height: 1.5; margin: 20px 0;">If you have any questions or need assistance, please contact our support team.</p>
+              
+              <p style="color: #333333; font-size: 14px; line-height: 1.5; margin: 20px 0 0 0;">Best regards,<br>The iDiscipline Team</p>
+            </div>
+            
+            <!-- Footer Image -->
+            <div style="text-align: center; padding: 0; margin: 0;">
+              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/footer.png" alt="MIPSS Footer" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            </div>
           </div>
-          
-          <p>If the button doesn't work, you can copy and paste this link into your browser:</p>
-          <p style="word-break: break-all; color: #666; font-size: 0.9em;">${resetLink}</p>
-          
-          <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p style="color: #856404; margin: 0;"><strong>⚠️ IMPORTANT:</strong> This link will expire in 1 hour. If you didn't request this password reset, please ignore this email.</p>
-          </div>
-          
-          <p style="margin-top: 30px; font-size: 0.9em; color: #666;">
-            If you have any questions, please contact the school office.
-          </p>
-        </div>
+        </body>
+        </html>
       `,
       text: `Password Reset Request\n\nHi ${userData.firstname} ${userData.lastname},\n\nWe received a request to reset your password for your iDiscipline account.\n\nTo reset your password, please visit this link:\n${resetLink}\n\n⚠️ IMPORTANT: This link will expire in 1 hour. If you didn't request this password reset, please ignore this email.\n\nIf you have any questions, please contact the school office.`
     };
@@ -2493,3 +3175,6 @@ app.post('/confirm-password-reset', async (req, res) => {
 // 🚀 Run the server
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+
+
+
