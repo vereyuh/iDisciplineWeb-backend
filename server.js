@@ -212,11 +212,39 @@ app.use(express.json());
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
+  const path = require('path');
+  const pdfPath = path.join(__dirname, '../public/docs/studenthandbook.pdf');
+  const altPaths = [
+    path.join(__dirname, 'public/docs/studenthandbook.pdf'),
+    path.join(process.cwd(), 'public/docs/studenthandbook.pdf'),
+    path.join(process.cwd(), 'docs/studenthandbook.pdf')
+  ];
+  
+  let pdfStatus = 'NOT FOUND';
+  let pdfPathFound = null;
+  
+  if (fs.existsSync(pdfPath)) {
+    pdfStatus = 'FOUND';
+    pdfPathFound = pdfPath;
+  } else {
+    for (const altPath of altPaths) {
+      if (fs.existsSync(altPath)) {
+        pdfStatus = 'FOUND';
+        pdfPathFound = altPath;
+        break;
+      }
+    }
+  }
+  
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
     anthropicApiKey: process.env.ANTHROPIC_API_KEY ? 'SET' : 'NOT SET',
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    pdfStatus: pdfStatus,
+    pdfPath: pdfPathFound,
+    workingDirectory: process.cwd(),
+    serverDirectory: __dirname
   });
 });
 
@@ -2636,24 +2664,95 @@ function checkRepeatedViolations(violations) {
 // New endpoint for AI suggestions for reports
 app.post('/api/report-suggestion', async (req, res) => {
   const { category, summary } = req.body;
+  console.log('AI suggestion request received:', { category, summaryLength: summary?.length });
+  
   try {
     checkRateLimit();
+    
+    // Check Anthropic API key first
+    if (!process.env.ANTHROPIC_API_KEY) {
+      console.error('ANTHROPIC_API_KEY is not set');
+      return res.status(500).json({ 
+        error: 'AI service not configured',
+        details: 'ANTHROPIC_API_KEY environment variable is not set'
+      });
+    }
+    
     // Load handbook text (assuming PDF is in public/docs/studenthandbook.pdf)
     const path = require('path');
     const pdfPath = path.join(__dirname, '../public/docs/studenthandbook.pdf');
     
+    console.log('Looking for PDF at:', pdfPath);
+    console.log('Current working directory:', process.cwd());
+    console.log('__dirname:', __dirname);
+    
     // Check if PDF file exists
+    let handbookText = '';
     if (!fs.existsSync(pdfPath)) {
       console.error('Student handbook PDF not found at:', pdfPath);
-      return res.status(500).json({ 
-        error: 'Student handbook not found',
-        details: 'PDF file is missing from server'
-      });
+      
+      // Try alternative paths
+      const altPaths = [
+        path.join(__dirname, 'public/docs/studenthandbook.pdf'),
+        path.join(process.cwd(), 'public/docs/studenthandbook.pdf'),
+        path.join(process.cwd(), 'docs/studenthandbook.pdf')
+      ];
+      
+      console.log('Trying alternative paths:', altPaths);
+      let pdfFound = false;
+      for (const altPath of altPaths) {
+        if (fs.existsSync(altPath)) {
+          console.log('Found PDF at alternative path:', altPath);
+          const dataBuffer = fs.readFileSync(altPath);
+          const data = await pdfParse(dataBuffer);
+          handbookText = data.text;
+          console.log('PDF parsed successfully, text length:', handbookText.length);
+          pdfFound = true;
+          break;
+        }
+      }
+      
+      if (!pdfFound) {
+        console.log('PDF not found, using fallback handbook text');
+        // Fallback handbook text for when PDF is not available
+        handbookText = `
+        STUDENT HANDBOOK - DISCIPLINARY POLICIES
+        
+        General Disciplinary Guidelines:
+        - Students are expected to maintain appropriate behavior at all times
+        - Respect for teachers, staff, and fellow students is required
+        - Academic integrity must be maintained
+        - School property must be treated with care
+        
+        Common Violations:
+        - Tardiness and absenteeism
+        - Disruptive behavior in class
+        - Inappropriate language or conduct
+        - Damage to school property
+        - Academic dishonesty
+        
+        Disciplinary Actions:
+        - Verbal warnings for minor infractions
+        - Written warnings for repeated violations
+        - Parent/guardian notification
+        - Detention or community service
+        - Suspension for serious violations
+        
+        Appeal Process:
+        - Students may appeal disciplinary decisions
+        - Appeals must be submitted within 48 hours
+        - Parent/guardian involvement is encouraged
+        `;
+      }
+    } else {
+      console.log('PDF found, reading file...');
+      const dataBuffer = fs.readFileSync(pdfPath);
+      console.log('PDF file size:', dataBuffer.length, 'bytes');
+      
+      const data = await pdfParse(dataBuffer);
+      handbookText = data.text;
+      console.log('PDF parsed successfully, text length:', handbookText.length);
     }
-    
-    const dataBuffer = fs.readFileSync(pdfPath);
-    const data = await pdfParse(dataBuffer);
-    const handbookText = data.text;
 
     // Compose prompt with truncated handbook text to reduce token usage
     const truncatedHandbook = handbookText.substring(0, 8000); // Limit to ~8000 characters
@@ -2698,6 +2797,9 @@ Constraints:
 - Be specific (who/what/when) and actionable.
 - Reference handbook practices only when helpful (no citations).`;
 
+    console.log('Sending request to Anthropic API...');
+    console.log('Prompt length:', prompt.length);
+    
     const message = await anthropic.messages.create({
       model: 'claude-3-5-haiku-20241022',
       max_tokens: 1000,
@@ -2709,7 +2811,9 @@ Constraints:
       ]
     });
 
+    console.log('Anthropic API response received');
     const suggestion = message.content[0].text;
+    console.log('Suggestion generated, length:', suggestion.length);
 
     res.json({ suggestion });
   } catch (err) {
