@@ -264,7 +264,7 @@ app.post('/send-verification-email', async (req, res) => {
   try {
     console.log(`📧 Sending verification email to ${email} with token: ${token}`);
     
-    const verificationLink = `${BACKEND_URL}/verify-email?token=${token}`;
+    const verificationLink = `${process.env.BACKEND_URL || 'https://idisciplineweb-backend.onrender.com'}/verify-email?token=${token}`;
     
     const msg = {
       to: email,
@@ -280,9 +280,12 @@ app.post('/send-verification-email', async (req, res) => {
         </head>
         <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f5f5f5;">
           <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
-            <!-- Header Image -->
-            <div style="text-align: center; padding: 0; margin: 0;">
-              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/header.png" alt="MIPSS Header" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            <!-- Header -->
+            <div style="background-color: #274684; color: white; padding: 20px; text-align: center;">
+              <h2 style="margin: 0; font-size: 24px; font-weight: bold;">MARY IMMACULATE PARISH SPECIAL SCHOOL INC.</h2>
+              <p style="margin: 10px 0 0 0; font-size: 14px;">Avocado Drive, Agro Homes 1, Moonwalk Village, Talon Singko, Las Piñas City, Philippines 1747</p>
+              <p style="margin: 5px 0 0 0; font-size: 12px;">Email: registrar@mipss.edu.ph | accounting@mipss.edu.ph | hrdm@mipss.edu.ph</p>
+              <p style="margin: 5px 0 0 0; font-size: 12px;">Website: mipss.edu.ph</p>
             </div>
             
             <!-- Main Content -->
@@ -317,9 +320,9 @@ app.post('/send-verification-email', async (req, res) => {
               <p style="color: #333333; font-size: 14px; line-height: 1.5; margin: 20px 0 0 0;">Best regards,<br>The iDiscipline Team</p>
             </div>
             
-            <!-- Footer Image -->
-            <div style="text-align: center; padding: 0; margin: 0;">
-              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/footer.png" alt="MIPSS Footer" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            <!-- Footer -->
+            <div style="background-color: #f8f9fa; border-top: 3px solid #274684; padding: 15px; text-align: center;">
+              <p style="margin: 0; color: #666; font-size: 12px;">© 2025 MIPSS — "God-Centered, Academically Excellent and Socially Responsible community of learners."</p>
             </div>
           </div>
         </body>
@@ -800,7 +803,7 @@ app.post('/resend-verification-link', async (req, res) => {
     }
 
     // Send new verification email
-    const verificationLink = `${BACKEND_URL}/verify-email?token=${newToken}`;
+    const verificationLink = `${process.env.BACKEND_URL || 'https://idisciplineweb-backend.onrender.com'}/verify-email?token=${newToken}`;
     
     const msg = {
       to: email,
@@ -816,9 +819,12 @@ app.post('/resend-verification-link', async (req, res) => {
         </head>
         <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f5f5f5;">
           <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
-            <!-- Header Image -->
-            <div style="text-align: center; padding: 0; margin: 0;">
-              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/header.png" alt="MIPSS Header" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            <!-- Header -->
+            <div style="background-color: #274684; color: white; padding: 20px; text-align: center;">
+              <h2 style="margin: 0; font-size: 24px; font-weight: bold;">MARY IMMACULATE PARISH SPECIAL SCHOOL INC.</h2>
+              <p style="margin: 10px 0 0 0; font-size: 14px;">Avocado Drive, Agro Homes 1, Moonwalk Village, Talon Singko, Las Piñas City, Philippines 1747</p>
+              <p style="margin: 5px 0 0 0; font-size: 12px;">Email: registrar@mipss.edu.ph | accounting@mipss.edu.ph | hrdm@mipss.edu.ph</p>
+              <p style="margin: 5px 0 0 0; font-size: 12px;">Website: mipss.edu.ph</p>
             </div>
             
             <!-- Main Content -->
@@ -853,9 +859,9 @@ app.post('/resend-verification-link', async (req, res) => {
               <p style="color: #333333; font-size: 14px; line-height: 1.5; margin: 20px 0 0 0;">Best regards,<br>The iDiscipline Team</p>
             </div>
             
-            <!-- Footer Image -->
-            <div style="text-align: center; padding: 0; margin: 0;">
-              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/footer.png" alt="MIPSS Footer" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            <!-- Footer -->
+            <div style="background-color: #f8f9fa; border-top: 3px solid #274684; padding: 15px; text-align: center;">
+              <p style="margin: 0; color: #666; font-size: 12px;">© 2025 MIPSS — "God-Centered, Academically Excellent and Socially Responsible community of learners."</p>
             </div>
           </div>
         </body>
@@ -1799,7 +1805,7 @@ app.post('/send-admin-verification-email', async (req, res) => {
   try {
     console.log(`📧 Sending admin verification email to ${email} with token: ${token}`);
     
-    const verificationLink = `${BACKEND_URL}/verify-admin-email?token=${token}`;
+    const verificationLink = `${process.env.BACKEND_URL || 'https://idisciplineweb-backend.onrender.com'}/verify-admin-email?token=${token}`;
     
     const msg = {
       to: email,
@@ -1815,9 +1821,12 @@ app.post('/send-admin-verification-email', async (req, res) => {
         </head>
         <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f5f5f5;">
           <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
-            <!-- Header Image -->
-            <div style="text-align: center; padding: 0; margin: 0;">
-              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/header.png" alt="MIPSS Header" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            <!-- Header -->
+            <div style="background-color: #274684; color: white; padding: 20px; text-align: center;">
+              <h2 style="margin: 0; font-size: 24px; font-weight: bold;">MARY IMMACULATE PARISH SPECIAL SCHOOL INC.</h2>
+              <p style="margin: 10px 0 0 0; font-size: 14px;">Avocado Drive, Agro Homes 1, Moonwalk Village, Talon Singko, Las Piñas City, Philippines 1747</p>
+              <p style="margin: 5px 0 0 0; font-size: 12px;">Email: registrar@mipss.edu.ph | accounting@mipss.edu.ph | hrdm@mipss.edu.ph</p>
+              <p style="margin: 5px 0 0 0; font-size: 12px;">Website: mipss.edu.ph</p>
             </div>
             
             <!-- Main Content -->
@@ -1853,9 +1862,9 @@ app.post('/send-admin-verification-email', async (req, res) => {
               <p style="color: #333333; font-size: 14px; line-height: 1.5; margin: 20px 0 0 0;">Best regards,<br>The iDiscipline Team</p>
             </div>
             
-            <!-- Footer Image -->
-            <div style="text-align: center; padding: 0; margin: 0;">
-              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/footer.png" alt="MIPSS Footer" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            <!-- Footer -->
+            <div style="background-color: #f8f9fa; border-top: 3px solid #274684; padding: 15px; text-align: center;">
+              <p style="margin: 0; color: #666; font-size: 12px;">© 2025 MIPSS — "God-Centered, Academically Excellent and Socially Responsible community of learners."</p>
             </div>
           </div>
         </body>
@@ -2756,7 +2765,7 @@ app.post('/api/report-suggestion', async (req, res) => {
 
     // Compose prompt with truncated handbook text to reduce token usage
     const truncatedHandbook = handbookText.substring(0, 8000); // Limit to ~8000 characters
-    const prompt = `You are a helpful school discipline analyst. Using the student handbook excerpt and the provided data summary, write a SHORT, structured markdown report for the category "${category}". Keep items concise, concrete, and school-appropriate. Do not include prefaces or concluding fluff. Use the following section order and headings exactly. Where a section has no signal, omit it.
+    const prompt = `You are a helpful school discipline analyst. Using the student handbook excerpt and the provided data summary, write a SHORT, structured markdown report for the category "${category}". Keep items concise, concrete, and school-appropriate. Do not include prefaces or concluding fluff. Use the following section order and headings exactly. Where a section has no signal, omit it. Also analyze TOP CAUSES from the summary (topCauses/causesByType) and propose targeted resolutions.
 
 Data Summary (JSON):
 ${summary}
@@ -2791,6 +2800,10 @@ Output format (markdown):
 
 ### Overall Recommendation
 - single short paragraph
+
+Additional Required Focus:
+- Top Causes Analysis: identify top 2-3 recurring causes from data summary (topCauses/causesByType)
+- For each, state likely root causes and give concrete resolution steps the DO team can implement within the next month
 
 Constraints:
 - Max 6 bullets per list.
@@ -3103,9 +3116,12 @@ app.post('/request-password-reset', async (req, res) => {
         </head>
         <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f5f5f5;">
           <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
-            <!-- Header Image -->
-            <div style="text-align: center; padding: 0; margin: 0;">
-              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/header.png" alt="MIPSS Header" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            <!-- Header -->
+            <div style="background-color: #274684; color: white; padding: 20px; text-align: center;">
+              <h2 style="margin: 0; font-size: 24px; font-weight: bold;">MARY IMMACULATE PARISH SPECIAL SCHOOL INC.</h2>
+              <p style="margin: 10px 0 0 0; font-size: 14px;">Avocado Drive, Agro Homes 1, Moonwalk Village, Talon Singko, Las Piñas City, Philippines 1747</p>
+              <p style="margin: 5px 0 0 0; font-size: 12px;">Email: registrar@mipss.edu.ph | accounting@mipss.edu.ph | hrdm@mipss.edu.ph</p>
+              <p style="margin: 5px 0 0 0; font-size: 12px;">Website: mipss.edu.ph</p>
             </div>
             
             <!-- Main Content -->
@@ -3134,9 +3150,9 @@ app.post('/request-password-reset', async (req, res) => {
               <p style="color: #333333; font-size: 14px; line-height: 1.5; margin: 20px 0 0 0;">Best regards,<br>The iDiscipline Team</p>
             </div>
             
-            <!-- Footer Image -->
-            <div style="text-align: center; padding: 0; margin: 0;">
-              <img src="${process.env.FRONTEND_URL || 'https://idisciplineweb.vercel.app'}/assets/footer.png" alt="MIPSS Footer" style="width: 100%; height: auto; display: block; margin: 0; padding: 0;">
+            <!-- Footer -->
+            <div style="background-color: #f8f9fa; border-top: 3px solid #274684; padding: 15px; text-align: center;">
+              <p style="margin: 0; color: #666; font-size: 12px;">© 2025 MIPSS — "God-Centered, Academically Excellent and Socially Responsible community of learners."</p>
             </div>
           </div>
         </body>
