@@ -54,7 +54,7 @@ const EXPO_ACCESS_TOKEN = process.env.EXPO_ACCESS_TOKEN;
 const EXPO_URL = 'https://exp.host/--/api/v2/push/send';
 
 // SendGrid sender defaults (support both FROM_NAME and SENDER_NAME)
-const SENDGRID_FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL || 'balduezaraven@gmail.com';
+const SENDGRID_FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL || 'idiscipline2025@gmail.com';
 const SENDGRID_FROM_NAME = process.env.SENDGRID_FROM_NAME || process.env.SENDGRID_SENDER_NAME || 'iDiscipline';
 
 // Function to send SMS via Semaphore
