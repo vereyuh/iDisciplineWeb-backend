@@ -230,9 +230,8 @@ app.use(helmet({
       connectSrc: ["'self'", "https://api.supabase.co", "https://api.anthropic.com", "wss:", "ws:"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
-      frameSrc: ["'none'"],
+      frameAncestors: ["'none'"], // Modern replacement for X-Frame-Options
       workerSrc: ["'self'", "blob:"],
-      childSrc: ["'self'", "blob:"],
       formAction: ["'self'"],
       baseUri: ["'self'"],
       manifestSrc: ["'self'"]
@@ -254,6 +253,15 @@ app.use(helmet({
     interestCohort: []
   }
 }));
+
+// Additional explicit security headers (backup)
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), interest-cohort=()');
+  next();
+});
 
 app.use(cors());
 app.use(express.json());
