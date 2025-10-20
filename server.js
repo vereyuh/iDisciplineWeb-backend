@@ -46,6 +46,19 @@ const supabase = createClient(
 // Set your SendGrid API key
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
+// CSP Reporting endpoint
+app.post('/api/csp-report', express.json({ type: 'application/csp-report' }), (req, res) => {
+  console.log('🚨 CSP Violation Report:', JSON.stringify(req.body, null, 2));
+  
+  // Log CSP violations for monitoring
+  const violation = req.body['csp-report'];
+  if (violation) {
+    console.log(`CSP Violation - Blocked URI: ${violation['blocked-uri']}, Directive: ${violation['violated-directive']}`);
+  }
+  
+  res.status(204).send();
+});
+
 // Semaphore SMS setup
 const SEMAPHORE_API_KEY = process.env.SEMAPHORE_API_KEY;
 const SEMAPHORE_SENDER_NAME = process.env.SEMAPHORE_SENDER_NAME || 'iDiscipline';
@@ -225,13 +238,14 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdn.jsdelivr.net"],
       fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdn.jsdelivr.net"],
-      imgSrc: ["'self'", "data:", "https:", "blob:"],
+      imgSrc: ["'self'", "data:", "https://*.supabase.co", "https://*.supabase.in", "blob:"],
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://cdn.jsdelivr.net"],
-      connectSrc: ["'self'", "https://api.supabase.co", "https://api.anthropic.com", "wss:", "ws:"],
+      connectSrc: ["'self'", "https://api.supabase.co", "https://api.anthropic.com", "https://*.supabase.co", "https://*.supabase.in", "wss:", "ws:"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
-      frameAncestors: ["'none'"], // Modern replacement for X-Frame-Options
+      frameSrc: ["'none'"],
       workerSrc: ["'self'", "blob:"],
+      childSrc: ["'self'", "blob:"],
       formAction: ["'self'"],
       baseUri: ["'self'"],
       manifestSrc: ["'self'"]
@@ -253,15 +267,6 @@ app.use(helmet({
     interestCohort: []
   }
 }));
-
-// Additional explicit security headers (backup)
-app.use((req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), interest-cohort=()');
-  next();
-});
 
 app.use(cors());
 app.use(express.json());
